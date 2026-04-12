@@ -9,6 +9,7 @@
 @property (strong, nonatomic) NSPopUpButton* modePopup;
 @property (strong, nonatomic) NSButton* toggleButton;
 @property (strong, nonatomic) NSTextField* configPathLabel;
+@property (strong, nonatomic) NSTextView* configEditor;
 @property (strong, nonatomic) Joycon2BLEReceiver* receiver;
 @property (strong, nonatomic) Joycon2VirtualHID* hid;
 @property (copy, nonatomic) NSString* configPath;
@@ -45,8 +46,13 @@
     }
 }
 
+- (void)loadConfigIntoEditor {
+    NSString* configContents = [NSString stringWithContentsOfFile:self.configPath encoding:NSUTF8StringEncoding error:nil];
+    [self.configEditor setString:configContents ?: @"{}"];
+}
+
 - (void)buildWindow {
-    NSRect frame = NSMakeRect(0, 0, 520, 320);
+    NSRect frame = NSMakeRect(0, 0, 760, 620);
     self.window = [[NSWindow alloc] initWithContentRect:frame
                                               styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable)
                                                 backing:NSBackingStoreBuffered
@@ -56,54 +62,77 @@
 
     NSView* contentView = self.window.contentView;
 
-    NSTextField* title = [self labelWithFrame:NSMakeRect(24, 260, 360, 28)
+    NSTextField* title = [self labelWithFrame:NSMakeRect(24, 566, 420, 28)
                                          text:@"Joy-Con 2 mouse + keyboard for macOS"
                                          font:[NSFont boldSystemFontOfSize:20]];
     [contentView addSubview:title];
 
-    self.statusLabel = [self labelWithFrame:NSMakeRect(24, 225, 420, 22)
+    self.statusLabel = [self labelWithFrame:NSMakeRect(24, 532, 600, 22)
                                        text:@"Status: starting"
                                        font:[NSFont systemFontOfSize:13]];
     [contentView addSubview:self.statusLabel];
 
-    NSTextField* modeLabel = [self labelWithFrame:NSMakeRect(24, 186, 80, 22)
+    NSTextField* modeLabel = [self labelWithFrame:NSMakeRect(24, 492, 80, 22)
                                               text:@"Mode"
                                               font:[NSFont systemFontOfSize:13]];
     [contentView addSubview:modeLabel];
 
-    self.modePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(110, 182, 160, 28) pullsDown:NO];
+    self.modePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(110, 488, 160, 28) pullsDown:NO];
     [self.modePopup addItemsWithTitles:@[@"Hybrid", @"Mouse", @"Keyboard"]];
     [self.modePopup setTarget:self];
     [self.modePopup setAction:@selector(modeChanged:)];
     [contentView addSubview:self.modePopup];
 
-    self.toggleButton = [[NSButton alloc] initWithFrame:NSMakeRect(290, 180, 120, 32)];
+    self.toggleButton = [[NSButton alloc] initWithFrame:NSMakeRect(290, 486, 120, 32)];
     [self.toggleButton setBezelStyle:NSBezelStyleRounded];
     [self.toggleButton setTitle:@"Stop"];
     [self.toggleButton setTarget:self];
     [self.toggleButton setAction:@selector(toggleRunning:)];
     [contentView addSubview:self.toggleButton];
 
-    NSButton* openConfigButton = [[NSButton alloc] initWithFrame:NSMakeRect(24, 142, 180, 30)];
+    NSButton* openConfigButton = [[NSButton alloc] initWithFrame:NSMakeRect(24, 446, 150, 30)];
     [openConfigButton setBezelStyle:NSBezelStyleRounded];
     [openConfigButton setTitle:@"Open Config Folder"];
     [openConfigButton setTarget:self];
     [openConfigButton setAction:@selector(openConfigFolder:)];
     [contentView addSubview:openConfigButton];
 
-    self.configPathLabel = [self labelWithFrame:NSMakeRect(24, 108, 470, 32)
+    NSButton* saveConfigButton = [[NSButton alloc] initWithFrame:NSMakeRect(188, 446, 110, 30)];
+    [saveConfigButton setBezelStyle:NSBezelStyleRounded];
+    [saveConfigButton setTitle:@"Save Config"];
+    [saveConfigButton setTarget:self];
+    [saveConfigButton setAction:@selector(saveConfig:)];
+    [contentView addSubview:saveConfigButton];
+
+    NSButton* reloadConfigButton = [[NSButton alloc] initWithFrame:NSMakeRect(312, 446, 120, 30)];
+    [reloadConfigButton setBezelStyle:NSBezelStyleRounded];
+    [reloadConfigButton setTitle:@"Reload Config"];
+    [reloadConfigButton setTarget:self];
+    [reloadConfigButton setAction:@selector(reloadConfig:)];
+    [contentView addSubview:reloadConfigButton];
+
+    self.configPathLabel = [self labelWithFrame:NSMakeRect(24, 410, 700, 32)
                                            text:[NSString stringWithFormat:@"Config: %@", self.configPath]
                                            font:[NSFont systemFontOfSize:11]];
     [self.configPathLabel setLineBreakMode:NSLineBreakByTruncatingMiddle];
     [contentView addSubview:self.configPathLabel];
 
-    NSTextField* controls = [self labelWithFrame:NSMakeRect(24, 20, 470, 78)
-                                             text:@"Defaults: A = jump/space, B = shift, R = left click in mouse mode, ZR = right click, L = scroll up, R = scroll down in hybrid, Home = Launchpad. Right stick moves the cursor when the cursor is hidden."
+    NSScrollView* editorScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(24, 118, 712, 280)];
+    [editorScrollView setHasVerticalScroller:YES];
+    [editorScrollView setBorderType:NSBezelBorder];
+    self.configEditor = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 712, 280)];
+    [self.configEditor setFont:[NSFont userFixedPitchFontOfSize:12]];
+    [editorScrollView setDocumentView:self.configEditor];
+    [contentView addSubview:editorScrollView];
+
+    NSTextField* controls = [self labelWithFrame:NSMakeRect(24, 20, 700, 86)
+                                             text:@"Edit the JSON config here to map any Joy-Con button to any keyboard key, mouse action, Launchpad, or screenshot/record action. Defaults: A = jump/space, B = shift, ZL = left click, ZR = right click, L/R = hotbar scroll, Down = drop item, Home = Launchpad, Camera = screenshot or hold for recording."
                                              font:[NSFont systemFontOfSize:12]];
     [controls setLineBreakMode:NSLineBreakByWordWrapping];
     [controls setUsesSingleLineMode:NO];
     [contentView addSubview:controls];
 
+    [self loadConfigIntoEditor];
     [self.window makeKeyAndOrderFront:nil];
 }
 
@@ -132,6 +161,36 @@
 - (void)startController {
     self.receiver = [[Joycon2BLEReceiver alloc] init];
     self.hid = [[Joycon2VirtualHID alloc] initWithMode:[self selectedMode] modeOverridden:YES configPath:self.configPath];
+    void (^hidConnected)(void) = [[self.receiver.onConnected copy] autorelease];
+    void (^hidFound)(NSString*, NSString*) = [[self.receiver.onDeviceFound copy] autorelease];
+    void (^hidError)(NSString*) = [[self.receiver.onError copy] autorelease];
+
+    __block Joycon2AppDelegate* weakSelf = self;
+    self.receiver.onDeviceFound = ^(NSString* name, NSString* address) {
+        if (hidFound) {
+            hidFound(name, address);
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            weakSelf.statusLabel.stringValue = [NSString stringWithFormat:@"Status: found %@, connecting", name ?: @"Joy-Con 2"];
+        });
+    };
+    self.receiver.onConnected = ^{
+        if (hidConnected) {
+            hidConnected();
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            weakSelf.statusLabel.stringValue = @"Status: Joy-Con connected";
+        });
+    };
+    self.receiver.onError = ^(NSString* error) {
+        if (hidError) {
+            hidError(error);
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            weakSelf.statusLabel.stringValue = [NSString stringWithFormat:@"Status: error - %@", error ?: @"unknown"];
+        });
+    };
+
     [self.hid startEmulation];
     self.running = YES;
     [self.statusLabel setStringValue:@"Status: scanning for Joy-Con 2 controllers"];
@@ -167,6 +226,36 @@
 
 - (void)openConfigFolder:(id)sender {
     [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[[NSURL fileURLWithPath:self.configPath]]];
+}
+
+- (void)saveConfig:(id)sender {
+    NSString* configContents = self.configEditor.string ?: @"{}";
+    NSData* data = [configContents dataUsingEncoding:NSUTF8StringEncoding];
+    NSError* parseError = nil;
+    id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseError];
+    if (![json isKindOfClass:[NSDictionary class]]) {
+        self.statusLabel.stringValue = [NSString stringWithFormat:@"Status: invalid config JSON - %@", parseError.localizedDescription ?: @"parse error"];
+        return;
+    }
+
+    NSError* writeError = nil;
+    BOOL success = [configContents writeToFile:self.configPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
+    if (!success) {
+        self.statusLabel.stringValue = [NSString stringWithFormat:@"Status: failed to save config - %@", writeError.localizedDescription ?: @"write error"];
+        return;
+    }
+
+    self.statusLabel.stringValue = @"Status: config saved, restarting controller";
+    BOOL wasRunning = self.running;
+    if (wasRunning) {
+        [self stopController];
+        [self startController];
+    }
+}
+
+- (void)reloadConfig:(id)sender {
+    [self loadConfigIntoEditor];
+    self.statusLabel.stringValue = @"Status: config reloaded into editor";
 }
 
 @end

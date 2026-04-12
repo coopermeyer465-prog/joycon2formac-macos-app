@@ -15,7 +15,8 @@ typedef NS_ENUM(NSInteger, BindingActionKind) {
     BindingActionKindKey,
     BindingActionKindMouseButton,
     BindingActionKindScroll,
-    BindingActionKindLaunchpad
+    BindingActionKindLaunchpad,
+    BindingActionKindScreenshot
 };
 
 struct MouseConfig {
@@ -66,6 +67,8 @@ struct DeviceState {
     double driftBiasX = 0.0;
     double driftBiasY = 0.0;
     CFAbsoluteTime calibrationEndsAt = 0.0;
+    CFAbsoluteTime screenshotPressedAt = 0.0;
+    bool screenshotHoldTriggered = false;
     bool stickUp = false;
     bool stickDown = false;
     bool stickLeft = false;
@@ -223,6 +226,8 @@ static BindingAction ParseActionString(NSString* actionString, const RuntimeConf
     if ([category isEqualToString:@"system"]) {
         if (target == "launchpad") {
             action.kind = BindingActionKindLaunchpad;
+        } else if (target == "screenshot") {
+            action.kind = BindingActionKindScreenshot;
         }
     }
 
@@ -262,6 +267,8 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 @private
     RuntimeConfig _config;
     std::map<std::string, DeviceState> _deviceStates;
+    NSTask *_screenRecordingTask;
+    NSString *_screenRecordingPath;
 }
 - (void)setupKeyboardEventTap;
 - (void)loadConfig;
@@ -273,6 +280,11 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)postMouseButton:(CGMouseButton)button down:(BOOL)down;
 - (void)postScrollX:(int32_t)scrollX scrollY:(int32_t)scrollY;
 - (void)openLaunchpad;
+- (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension;
+- (void)takeScreenshot;
+- (void)startScreenRecording;
+- (void)stopScreenRecording;
+- (BOOL)isScreenRecordingActive;
 - (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
 - (void)processRightStickMouseFromData:(NSDictionary*)joyconData;
 - (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
@@ -330,6 +342,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 }
 
 - (void)dealloc {
+    if ([self isScreenRecordingActive]) {
+        [self stopScreenRecording];
+    }
+    [_screenRecordingPath release];
     [self stopEmulation];
     [_configPath release];
     [super dealloc];
@@ -458,10 +474,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindAction(_config.mouseBindings, "Y", @"key:q");
     bindAction(_config.mouseBindings, "L", @"mouse:scroll_up");
     bindAction(_config.mouseBindings, "ZL", @"mouse:scroll_down");
-    bindAction(_config.mouseBindings, "UP", @"key:up_arrow");
-    bindAction(_config.mouseBindings, "DOWN", @"key:down_arrow");
-    bindAction(_config.mouseBindings, "LEFT", @"key:left_arrow");
-    bindAction(_config.mouseBindings, "RIGHT", @"key:right_arrow");
+    bindAction(_config.mouseBindings, "UP", @"mouse:middle");
+    bindAction(_config.mouseBindings, "DOWN", @"key:q");
+    bindAction(_config.mouseBindings, "LEFT", @"mouse:scroll_up");
+    bindAction(_config.mouseBindings, "RIGHT", @"mouse:scroll_down");
     bindAction(_config.mouseBindings, "SL(R)", @"mouse:scroll_up");
     bindAction(_config.mouseBindings, "SR(R)", @"mouse:scroll_down");
     bindAction(_config.mouseBindings, "LS", @"key:left_control");
@@ -469,7 +485,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindAction(_config.mouseBindings, "SELECT", @"key:t");
     bindAction(_config.mouseBindings, "START", @"key:escape");
     bindAction(_config.mouseBindings, "HOME", @"system:launchpad");
-    bindAction(_config.mouseBindings, "CAMERA", @"key:f5");
+    bindAction(_config.mouseBindings, "CAMERA", @"system:screenshot");
     bindAction(_config.mouseBindings, "CHAT", @"key:t");
 
     bindAction(_config.hybridBindings, "A", @"key:space");
@@ -480,10 +496,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindAction(_config.hybridBindings, "ZR", @"mouse:right");
     bindAction(_config.hybridBindings, "L", @"mouse:scroll_up");
     bindAction(_config.hybridBindings, "ZL", @"mouse:left");
-    bindAction(_config.hybridBindings, "UP", @"key:up_arrow");
-    bindAction(_config.hybridBindings, "DOWN", @"key:down_arrow");
-    bindAction(_config.hybridBindings, "LEFT", @"key:left_arrow");
-    bindAction(_config.hybridBindings, "RIGHT", @"key:right_arrow");
+    bindAction(_config.hybridBindings, "UP", @"mouse:middle");
+    bindAction(_config.hybridBindings, "DOWN", @"key:q");
+    bindAction(_config.hybridBindings, "LEFT", @"mouse:scroll_up");
+    bindAction(_config.hybridBindings, "RIGHT", @"mouse:scroll_down");
     bindAction(_config.hybridBindings, "SL(L)", @"mouse:scroll_up");
     bindAction(_config.hybridBindings, "SR(L)", @"mouse:scroll_down");
     bindAction(_config.hybridBindings, "SL(R)", @"mouse:scroll_up");
@@ -493,7 +509,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindAction(_config.hybridBindings, "SELECT", @"key:t");
     bindAction(_config.hybridBindings, "START", @"key:escape");
     bindAction(_config.hybridBindings, "HOME", @"system:launchpad");
-    bindAction(_config.hybridBindings, "CAMERA", @"key:f5");
+    bindAction(_config.hybridBindings, "CAMERA", @"system:screenshot");
     bindAction(_config.hybridBindings, "CHAT", @"key:t");
 
     bindAction(_config.keyboardBindings, "A", @"key:space");
@@ -504,10 +520,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindAction(_config.keyboardBindings, "ZR", @"key:left_control");
     bindAction(_config.keyboardBindings, "L", @"mouse:scroll_up");
     bindAction(_config.keyboardBindings, "ZL", @"mouse:scroll_down");
-    bindAction(_config.keyboardBindings, "UP", @"key:up_arrow");
-    bindAction(_config.keyboardBindings, "DOWN", @"key:down_arrow");
-    bindAction(_config.keyboardBindings, "LEFT", @"key:left_arrow");
-    bindAction(_config.keyboardBindings, "RIGHT", @"key:right_arrow");
+    bindAction(_config.keyboardBindings, "UP", @"mouse:middle");
+    bindAction(_config.keyboardBindings, "DOWN", @"key:q");
+    bindAction(_config.keyboardBindings, "LEFT", @"mouse:scroll_up");
+    bindAction(_config.keyboardBindings, "RIGHT", @"mouse:scroll_down");
     bindAction(_config.keyboardBindings, "SL(L)", @"mouse:scroll_up");
     bindAction(_config.keyboardBindings, "SR(L)", @"mouse:scroll_down");
     bindAction(_config.keyboardBindings, "SL(R)", @"mouse:scroll_up");
@@ -517,7 +533,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindAction(_config.keyboardBindings, "SELECT", @"key:t");
     bindAction(_config.keyboardBindings, "START", @"key:escape");
     bindAction(_config.keyboardBindings, "HOME", @"system:launchpad");
-    bindAction(_config.keyboardBindings, "CAMERA", @"key:f5");
+    bindAction(_config.keyboardBindings, "CAMERA", @"system:screenshot");
     bindAction(_config.keyboardBindings, "CHAT", @"key:t");
 }
 
@@ -594,7 +610,64 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 }
 
 - (void)openLaunchpad {
-    [[NSWorkspace sharedWorkspace] launchApplication:@"Launchpad"];
+    NSURL* launchpadURL = [NSURL fileURLWithPath:@"/System/Applications/Launchpad.app"];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:launchpadURL.path]) {
+        return;
+    }
+
+    if (@available(macOS 10.15, *)) {
+        NSWorkspaceOpenConfiguration* configuration = [NSWorkspaceOpenConfiguration configuration];
+        [[NSWorkspace sharedWorkspace] openApplicationAtURL:launchpadURL configuration:configuration completionHandler:nil];
+    }
+}
+
+- (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension {
+    NSString* documentsDirectory = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
+    formatter.dateFormat = @"yyyy-MM-dd_HH-mm-ss";
+    NSString* timestamp = [formatter stringFromDate:[NSDate date]];
+    [formatter release];
+    NSString* fileName = [NSString stringWithFormat:@"%@_%@.%@", prefix, timestamp, extension];
+    return [documentsDirectory stringByAppendingPathComponent:fileName];
+}
+
+- (void)takeScreenshot {
+    NSString* outputPath = [self documentsCapturePathWithPrefix:@"joycon2_screenshot" extension:@"png"];
+    NSTask* task = [[NSTask alloc] init];
+    task.launchPath = @"/usr/sbin/screencapture";
+    task.arguments = @[@"-x", outputPath];
+    [task launch];
+    [task waitUntilExit];
+    [task release];
+}
+
+- (BOOL)isScreenRecordingActive {
+    return _screenRecordingTask != nil && _screenRecordingTask.isRunning;
+}
+
+- (void)startScreenRecording {
+    if ([self isScreenRecordingActive]) {
+        return;
+    }
+
+    [_screenRecordingPath release];
+    _screenRecordingPath = [[self documentsCapturePathWithPrefix:@"joycon2_recording" extension:@"mov"] copy];
+
+    _screenRecordingTask = [[NSTask alloc] init];
+    _screenRecordingTask.launchPath = @"/usr/sbin/screencapture";
+    _screenRecordingTask.arguments = @[@"-v", @"-D1", _screenRecordingPath];
+    [_screenRecordingTask launch];
+}
+
+- (void)stopScreenRecording {
+    if (![self isScreenRecordingActive]) {
+        return;
+    }
+
+    [_screenRecordingTask terminate];
+    [_screenRecordingTask waitUntilExit];
+    [_screenRecordingTask release];
+    _screenRecordingTask = nil;
 }
 
 - (const BindingAction*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode {
@@ -704,14 +777,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 }
 
 - (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state {
-    if (!CGCursorIsVisible()) {
-        [self processRightStickMouseFromData:joyconData];
-        return;
-    }
-
     NSNumber* mouseXNumber = joyconData[@"MouseX"];
     NSNumber* mouseYNumber = joyconData[@"MouseY"];
     if (!mouseXNumber || !mouseYNumber) {
+        [self processRightStickMouseFromData:joyconData];
         return;
     }
 
@@ -777,6 +846,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (_config.mouse.invertY) deltaY = -deltaY;
 
     if (std::fabs(deltaX) < 0.01 && std::fabs(deltaY) < 0.01) {
+        [self processRightStickMouseFromData:joyconData];
         return;
     }
 
@@ -831,6 +901,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 }
 
 - (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     std::set<uint32_t> relevantMasks;
     for (const auto& entry : _config.bindings) relevantMasks.insert(entry.first);
     switch (self.emulationMode) {
@@ -853,6 +924,37 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         }
         bool wasPressed = (state.lastButtons & mask) != 0;
         bool isPressed = (buttons & mask) != 0;
+
+        if (action->kind == BindingActionKindScreenshot) {
+            if ([self isScreenRecordingActive]) {
+                if (isPressed && !wasPressed) {
+                    [self stopScreenRecording];
+                    state.screenshotHoldTriggered = true;
+                } else if (!isPressed && wasPressed) {
+                    state.screenshotPressedAt = 0.0;
+                    state.screenshotHoldTriggered = false;
+                }
+                continue;
+            }
+
+            if (isPressed && !wasPressed) {
+                state.screenshotPressedAt = now;
+                state.screenshotHoldTriggered = false;
+            } else if (isPressed && wasPressed) {
+                if (!state.screenshotHoldTriggered && (now - state.screenshotPressedAt) >= 1.5) {
+                    [self startScreenRecording];
+                    state.screenshotHoldTriggered = true;
+                }
+            } else if (!isPressed && wasPressed) {
+                if (!state.screenshotHoldTriggered) {
+                    [self takeScreenshot];
+                }
+                state.screenshotPressedAt = 0.0;
+                state.screenshotHoldTriggered = false;
+            }
+            continue;
+        }
+
         if (wasPressed == isPressed) {
             continue;
         }

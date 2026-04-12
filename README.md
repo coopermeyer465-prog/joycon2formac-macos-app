@@ -90,7 +90,7 @@ Hybrid mode:
 App bundle:
 
 ```bash
-open /Users/marissameyer/Desktop/Joycon2forMac/build/Joycon2forMac.app
+open /Users/marissameyer/Desktop/Joycon2forMac-publish/build/Joycon2forMac.app
 ```
 
 Mouse-only mode:
@@ -231,6 +231,7 @@ Example:
 - `mouse:scroll_left`
 - `mouse:scroll_right`
 - `system:launchpad`
+- `system:screenshot`
 
 Examples:
 
@@ -246,10 +247,11 @@ Examples:
 
 - Cursor movement comes only from packets marked as **right Joy-Con**.
 - Cursor movement currently comes from the right Joy-Con **mouse sensor**, not the right stick.
-- When macOS hides the cursor, the right stick becomes a mouse fallback so pointer control still works in hidden-cursor games.
+- When the mouse sensor path is idle or a game hides the cursor, the right stick becomes a mouse fallback so pointer control still works in hidden-cursor games.
 - Left Joy-Con packets are ignored completely when `enableLeftJoyCon` is `false`.
 - Button bindings still work in hybrid mode for either controller that is allowed by config.
 - Left stick to keyboard is evaluated from left-controller packets, which avoids the right Joy-Con accidentally cancelling stick directions.
+- The screenshot button supports two behaviors by default: tap for a full-screen screenshot in Documents, hold for about 1.5 seconds to start screen recording, then tap again to stop and save the recording to Documents.
 
 ## Troubleshooting
 
