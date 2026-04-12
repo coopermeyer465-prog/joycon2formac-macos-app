@@ -328,6 +328,7 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
     NSString *_screenRecordingPath;
 }
 - (void)setupKeyboardEventTap;
+- (void)ensureAccessibilityPermission;
 - (void)loadConfig;
 - (void)installDefaultBindings;
 - (const ButtonBinding*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode;
@@ -337,6 +338,7 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)postKeyboardTapForKeyCode:(CGKeyCode)keyCode flags:(CGEventFlags)flags;
 - (void)postMouseButton:(CGMouseButton)button down:(BOOL)down;
 - (void)postScrollX:(int32_t)scrollX scrollY:(int32_t)scrollY;
+- (void)postEventToAllTaps:(CGEventRef)event;
 - (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY;
 - (void)openLaunchpad;
 - (void)openURLString:(const std::string&)urlString;
@@ -617,6 +619,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 #ifndef HID_ENABLE
     [joyconClient startScan];
 #endif
+    [self ensureAccessibilityPermission];
     [self setupKeyboardEventTap];
     NSLog(@"Started Joy-Con emulation in %@ mode", ModeName(self.emulationMode));
 }
@@ -662,6 +665,13 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     return event;
 }
 
+- (void)ensureAccessibilityPermission {
+    NSDictionary* options = @{(__bridge NSString*)kAXTrustedCheckOptionPrompt: @YES};
+    if (!AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options)) {
+        NSLog(@"Accessibility access is not granted yet. Input injection may not work until JoyCon2forMac is allowed in System Settings > Privacy & Security > Accessibility.");
+    }
+}
+
 - (void)setupKeyboardEventTap {
     if (_eventTap) {
         return;
@@ -704,7 +714,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (moveEvent) {
         CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
         CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
-        CGEventPost(kCGSessionEventTap, moveEvent);
+        [self postEventToAllTaps:moveEvent];
         CFRelease(moveEvent);
     }
     if (cursorVisible) {
@@ -723,6 +733,18 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (status != 0) {
         [self postKeyboardEventForKeyCode:118 down:YES];
         [self postKeyboardEventForKeyCode:118 down:NO];
+    }
+}
+
+- (void)postEventToAllTaps:(CGEventRef)event {
+    if (!event) {
+        return;
+    }
+    CGEventPost(kCGHIDEventTap, event);
+    CGEventRef copy = CGEventCreateCopy(event);
+    if (copy) {
+        CGEventPost(kCGSessionEventTap, copy);
+        CFRelease(copy);
     }
 }
 
@@ -1043,6 +1065,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return NO;
     }
 
+    if (CGCursorIsVisible()) {
+        return NO;
+    }
+
     double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
     double normalizedY = (2047.0 - [rightStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
@@ -1269,7 +1295,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!event) {
         return;
     }
-    CGEventPost(kCGSessionEventTap, event);
+    [self postEventToAllTaps:event];
     CFRelease(event);
 }
 
@@ -1283,8 +1309,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
     CGEventSetFlags(downEvent, flags);
     CGEventSetFlags(upEvent, flags);
-    CGEventPost(kCGSessionEventTap, downEvent);
-    CGEventPost(kCGSessionEventTap, upEvent);
+    [self postEventToAllTaps:downEvent];
+    [self postEventToAllTaps:upEvent];
     CFRelease(downEvent);
     CFRelease(upEvent);
 }
@@ -1307,7 +1333,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!clickEvent) {
         return;
     }
-    CGEventPost(kCGSessionEventTap, clickEvent);
+    [self postEventToAllTaps:clickEvent];
     CFRelease(clickEvent);
 }
 
@@ -1320,7 +1346,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!wheelEvent) {
         return;
     }
-    CGEventPost(kCGSessionEventTap, wheelEvent);
+    [self postEventToAllTaps:wheelEvent];
     CFRelease(wheelEvent);
 }
 
