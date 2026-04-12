@@ -375,6 +375,7 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
     BOOL _hasCursorPosition;
     CGPoint _cursorPosition;
     CFAbsoluteTime _lastDoubleWAt;
+    CFAbsoluteTime _lastSpaceTapAt;
 }
 - (void)setupKeyboardEventTap;
 - (void)ensureAccessibilityPermission;
@@ -928,13 +929,13 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             break;
         case BindingMacroKindDoubleW: {
             CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-            if (_lastDoubleWAt > 0.0 && (now - _lastDoubleWAt) < 1.0) {
+            if (_lastDoubleWAt > 0.0 && (now - _lastDoubleWAt) < 1.5) {
                 break;
             }
             _lastDoubleWAt = now;
             [self postKeyboardEventForKeyCode:13 down:YES];
             [self postKeyboardEventForKeyCode:13 down:NO];
-            usleep(25000);
+            usleep(250000);
             [self postKeyboardEventForKeyCode:13 down:YES];
             [self postKeyboardEventForKeyCode:13 down:NO];
             break;
@@ -951,6 +952,13 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     switch (macroKind) {
         case BindingMacroKindSpaceClick:
             if (keyboardEnabled && !CGCursorIsVisible()) {
+                if (down) {
+                    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+                    if (_lastSpaceTapAt > 0.0 && (now - _lastSpaceTapAt) < 0.35) {
+                        break;
+                    }
+                    _lastSpaceTapAt = now;
+                }
                 [self postKeyboardEventForKeyCode:49 down:down];
             }
             if (mouseEnabled && CGCursorIsVisible()) {
@@ -1199,6 +1207,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _middleMouseHeld = NO;
     _hasCursorPosition = NO;
     _lastDoubleWAt = 0.0;
+    _lastSpaceTapAt = 0.0;
 }
 
 - (void)sendHIDReportFromJoyconData:(NSDictionary *)joyconData {
