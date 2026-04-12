@@ -37,7 +37,9 @@
       "LEFT": {
         "tap": "key:left_arrow"
       },
-      "RIGHT": "key:t",
+      "RIGHT": {
+        "tap": "key:t"
+      },
       "SL(L)": "mouse:scroll_up",
       "SR(L)": "mouse:scroll_down",
       "SL(R)": "mouse:scroll_up",
@@ -70,7 +72,9 @@
       "LEFT": {
         "tap": "key:left_arrow"
       },
-      "RIGHT": "key:t",
+      "RIGHT": {
+        "tap": "key:t"
+      },
       "SL(L)": "mouse:scroll_up",
       "SR(L)": "mouse:scroll_down",
       "SL(R)": "mouse:scroll_up",
@@ -101,7 +105,9 @@
       "LEFT": {
         "tap": "key:left_arrow"
       },
-      "RIGHT": "key:t",
+      "RIGHT": {
+        "tap": "key:t"
+      },
       "LS": {
         "tap": "system:double_w"
       },

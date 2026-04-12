@@ -330,6 +330,8 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
     BOOL _leftMouseHeld;
     BOOL _rightMouseHeld;
     BOOL _middleMouseHeld;
+    NSWindow *_capturePreviewWindow;
+    NSTimer *_capturePreviewTimer;
 }
 - (void)setupKeyboardEventTap;
 - (void)ensureAccessibilityPermission;
@@ -353,6 +355,8 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)startScreenRecording;
 - (void)stopScreenRecording;
 - (BOOL)isScreenRecordingActive;
+- (void)showCapturePreviewForPath:(NSString*)path;
+- (void)hideCapturePreview:(NSTimer*)timer;
 - (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData;
 - (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
 - (void)performPressAction:(const BindingAction&)action down:(BOOL)down keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
@@ -414,6 +418,16 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 - (void)dealloc {
     if ([self isScreenRecordingActive]) {
         [self stopScreenRecording];
+    }
+    if (_capturePreviewTimer) {
+        [_capturePreviewTimer invalidate];
+        [_capturePreviewTimer release];
+        _capturePreviewTimer = nil;
+    }
+    if (_capturePreviewWindow) {
+        [_capturePreviewWindow orderOut:nil];
+        [_capturePreviewWindow release];
+        _capturePreviewWindow = nil;
     }
     [_screenRecordingPath release];
     [self stopEmulation];
@@ -557,7 +571,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.mouseBindings, "UP", @"system:pov");
     bindPress(_config.mouseBindings, "DOWN", @"key:q");
     bindTap(_config.mouseBindings, "LEFT", @"key:left_arrow");
-    bindPress(_config.mouseBindings, "RIGHT", @"key:t");
+    bindTap(_config.mouseBindings, "RIGHT", @"key:t");
     bindPress(_config.mouseBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.mouseBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.mouseBindings, "SL(R)", @"mouse:scroll_up");
@@ -581,7 +595,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.hybridBindings, "UP", @"system:pov");
     bindPress(_config.hybridBindings, "DOWN", @"key:q");
     bindTap(_config.hybridBindings, "LEFT", @"key:left_arrow");
-    bindPress(_config.hybridBindings, "RIGHT", @"key:t");
+    bindTap(_config.hybridBindings, "RIGHT", @"key:t");
     bindPress(_config.hybridBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.hybridBindings, "SL(R)", @"mouse:scroll_up");
@@ -605,7 +619,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.keyboardBindings, "UP", @"system:pov");
     bindPress(_config.keyboardBindings, "DOWN", @"key:q");
     bindTap(_config.keyboardBindings, "LEFT", @"key:left_arrow");
-    bindPress(_config.keyboardBindings, "RIGHT", @"key:t");
+    bindTap(_config.keyboardBindings, "RIGHT", @"key:t");
     bindPress(_config.keyboardBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.keyboardBindings, "SL(R)", @"mouse:scroll_up");
@@ -725,20 +739,22 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         eventButton = kCGMouseButtonCenter;
     }
 
-    CGEventRef relativeEvent = CGEventCreateMouseEvent(NULL, eventType, currentPos, eventButton);
-    if (relativeEvent) {
-        CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
-        CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
-        [self postEventToAllTaps:relativeEvent];
-        CFRelease(relativeEvent);
-    }
-
     CGEventRef absoluteEvent = CGEventCreateMouseEvent(NULL, eventType, nextPos, eventButton);
     if (absoluteEvent) {
         CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
         CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
         [self postEventToAllTaps:absoluteEvent];
         CFRelease(absoluteEvent);
+    }
+
+    if (!_leftMouseHeld && !_rightMouseHeld && !_middleMouseHeld) {
+        CGEventRef relativeEvent = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, currentPos, kCGMouseButtonLeft);
+        if (relativeEvent) {
+            CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
+            CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
+            [self postEventToAllTaps:relativeEvent];
+            CFRelease(relativeEvent);
+        }
     }
 
     CGWarpMouseCursorPosition(nextPos);
@@ -843,6 +859,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     [task launch];
     [task waitUntilExit];
     NSLog(@"Saved JoyCon2 screenshot to %@", outputPath);
+    [self showCapturePreviewForPath:outputPath];
     [task release];
 }
 
@@ -880,6 +897,89 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _screenRecordingTask = nil;
     if (_screenRecordingPath) {
         NSLog(@"Saved JoyCon2 screen recording to %@", _screenRecordingPath);
+        [self showCapturePreviewForPath:_screenRecordingPath];
+    }
+}
+
+- (void)showCapturePreviewForPath:(NSString*)path {
+    if (path.length == 0) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (_capturePreviewTimer) {
+            [_capturePreviewTimer invalidate];
+            [_capturePreviewTimer release];
+            _capturePreviewTimer = nil;
+        }
+        if (_capturePreviewWindow) {
+            [_capturePreviewWindow orderOut:nil];
+            [_capturePreviewWindow release];
+            _capturePreviewWindow = nil;
+        }
+
+        NSScreen* screen = [NSScreen mainScreen];
+        if (!screen) {
+            return;
+        }
+
+        NSRect visibleFrame = screen.visibleFrame;
+        NSRect frame = NSMakeRect(NSMaxX(visibleFrame) - 236.0, NSMinY(visibleFrame) + 24.0, 216.0, 140.0);
+        _capturePreviewWindow = [[NSWindow alloc] initWithContentRect:frame
+                                                            styleMask:NSWindowStyleMaskBorderless
+                                                              backing:NSBackingStoreBuffered
+                                                                defer:NO];
+        [_capturePreviewWindow setOpaque:NO];
+        [_capturePreviewWindow setBackgroundColor:[NSColor colorWithWhite:0.08 alpha:0.9]];
+        [_capturePreviewWindow setHasShadow:YES];
+        [_capturePreviewWindow setIgnoresMouseEvents:YES];
+        [_capturePreviewWindow setLevel:NSStatusWindowLevel];
+
+        NSView* contentView = [_capturePreviewWindow contentView];
+        [contentView setWantsLayer:YES];
+        contentView.layer.cornerRadius = 16.0;
+        contentView.layer.masksToBounds = YES;
+
+        NSImage* previewImage = [[[NSImage alloc] initWithContentsOfFile:path] autorelease];
+        if (!previewImage) {
+            previewImage = [[NSWorkspace sharedWorkspace] iconForFile:path];
+        }
+
+        NSImageView* imageView = [[[NSImageView alloc] initWithFrame:NSMakeRect(14, 34, 188, 92)] autorelease];
+        [imageView setImageScaling:NSImageScaleProportionallyUpOrDown];
+        [imageView setImage:previewImage];
+        [contentView addSubview:imageView];
+
+        NSTextField* label = [[[NSTextField alloc] initWithFrame:NSMakeRect(14, 10, 188, 18)] autorelease];
+        [label setEditable:NO];
+        [label setBezeled:NO];
+        [label setDrawsBackground:NO];
+        [label setTextColor:[NSColor whiteColor]];
+        [label setFont:[NSFont systemFontOfSize:12 weight:NSFontWeightMedium]];
+        [label setLineBreakMode:NSLineBreakByTruncatingMiddle];
+        [label setStringValue:[path lastPathComponent]];
+        [contentView addSubview:label];
+
+        [_capturePreviewWindow orderFrontRegardless];
+
+        _capturePreviewTimer = [[NSTimer scheduledTimerWithTimeInterval:2.0
+                                                                 target:self
+                                                               selector:@selector(hideCapturePreview:)
+                                                               userInfo:nil
+                                                                repeats:NO] retain];
+    });
+}
+
+- (void)hideCapturePreview:(NSTimer*)timer {
+    if (_capturePreviewTimer) {
+        [_capturePreviewTimer invalidate];
+        [_capturePreviewTimer release];
+        _capturePreviewTimer = nil;
+    }
+    if (_capturePreviewWindow) {
+        [_capturePreviewWindow orderOut:nil];
+        [_capturePreviewWindow release];
+        _capturePreviewWindow = nil;
     }
 }
 
@@ -1268,7 +1368,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             } else if (binding->tapAction.kind != BindingActionKindNone) {
                 auto lastTapIt = state.lastTapActionAt.find(mask);
                 double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
-                if (elapsedSinceLastTap >= tapDebounce) {
+                double requiredDebounce = (mask == 0x00080000 && binding->tapAction.kind == BindingActionKindMacro &&
+                                           binding->tapAction.macroKind == BindingMacroKindDoubleW) ? 0.75 : tapDebounce;
+                if (elapsedSinceLastTap >= requiredDebounce) {
                     [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
                     state.lastTapActionAt[mask] = now;
                 }
@@ -1285,7 +1387,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             if (shouldTap) {
                 auto lastTapIt = state.lastTapActionAt.find(mask);
                 double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
-                if (elapsedSinceLastTap >= tapDebounce) {
+                double requiredDebounce = (mask == 0x00080000 && binding->tapAction.kind == BindingActionKindMacro &&
+                                           binding->tapAction.macroKind == BindingMacroKindDoubleW) ? 0.75 : tapDebounce;
+                if (elapsedSinceLastTap >= requiredDebounce) {
                     [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
                     state.lastTapActionAt[mask] = now;
                 }
