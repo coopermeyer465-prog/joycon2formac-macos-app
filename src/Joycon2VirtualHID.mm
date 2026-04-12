@@ -725,7 +725,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 - (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY {
     BOOL cursorVisible = CGCursorIsVisible();
     CGPoint currentPos = _cursorPosition;
-    if (!_hasCursorPosition) {
+    if (cursorVisible || !_hasCursorPosition) {
         CGEventRef tempEvent = CGEventCreate(NULL);
         currentPos = CGEventGetLocation(tempEvent);
         CFRelease(tempEvent);
@@ -1544,7 +1544,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     CGPoint currentPos = _cursorPosition;
-    if (!_hasCursorPosition) {
+    if (CGCursorIsVisible() || !_hasCursorPosition) {
         CGEventRef tempEvent = CGEventCreate(NULL);
         currentPos = CGEventGetLocation(tempEvent);
         CFRelease(tempEvent);
