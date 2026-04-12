@@ -43,7 +43,6 @@
       "SL(L)": "mouse:scroll_up",
       "SR(L)": "mouse:scroll_down",
       "SL(R)": "mouse:scroll_up",
-      "SR(R)": "mouse:scroll_down",
       "LS": {
         "tap": "system:double_w"
       },
@@ -61,7 +60,6 @@
       "B": {
         "tap": "system:shift_delete"
       },
-      "R": "mouse:scroll_down",
       "ZR": "mouse:right",
       "X": "key:f",
       "Y": "key:e",
@@ -78,7 +76,6 @@
       "SL(L)": "mouse:scroll_up",
       "SR(L)": "mouse:scroll_down",
       "SL(R)": "mouse:scroll_up",
-      "SR(R)": "mouse:scroll_down",
       "LS": {
         "tap": "system:double_w"
       },

@@ -584,7 +584,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.mouseBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.mouseBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.mouseBindings, "SL(R)", @"mouse:scroll_up");
-    bindPress(_config.mouseBindings, "SR(R)", @"mouse:scroll_down");
     bindTap(_config.mouseBindings, "LS", @"system:double_w");
     bindPress(_config.mouseBindings, "RS", @"system:pov");
     bindPress(_config.mouseBindings, "SELECT", @"key:escape");
@@ -597,7 +596,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindTap(_config.hybridBindings, "B", @"system:shift_delete");
     bindPress(_config.hybridBindings, "X", @"key:f");
     bindPress(_config.hybridBindings, "Y", @"key:e");
-    bindPress(_config.hybridBindings, "R", @"mouse:scroll_down");
     bindPress(_config.hybridBindings, "ZR", @"mouse:right");
     bindPress(_config.hybridBindings, "L", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "ZL", @"mouse:left");
@@ -608,7 +606,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.hybridBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.hybridBindings, "SL(R)", @"mouse:scroll_up");
-    bindPress(_config.hybridBindings, "SR(R)", @"mouse:scroll_down");
     bindTap(_config.hybridBindings, "LS", @"system:double_w");
     bindPress(_config.hybridBindings, "RS", @"system:pov");
     bindPress(_config.hybridBindings, "SELECT", @"key:escape");
@@ -632,7 +629,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.keyboardBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.keyboardBindings, "SL(R)", @"mouse:scroll_up");
-    bindPress(_config.keyboardBindings, "SR(R)", @"mouse:scroll_down");
     bindTap(_config.keyboardBindings, "LS", @"system:double_w");
     bindPress(_config.keyboardBindings, "RS", @"system:pov");
     bindPress(_config.keyboardBindings, "SELECT", @"key:escape");
