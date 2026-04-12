@@ -327,6 +327,9 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
     std::map<std::string, DeviceState> _deviceStates;
     NSTask *_screenRecordingTask;
     NSString *_screenRecordingPath;
+    BOOL _leftMouseHeld;
+    BOOL _rightMouseHeld;
+    BOOL _middleMouseHeld;
 }
 - (void)setupKeyboardEventTap;
 - (void)ensureAccessibilityPermission;
@@ -700,7 +703,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     CGEventRef tempEvent = CGEventCreate(NULL);
     CGPoint currentPos = CGEventGetLocation(tempEvent);
     CFRelease(tempEvent);
-    const bool cursorVisible = CGCursorIsVisible();
 
     CGPoint nextPos = currentPos;
     nextPos.x += deltaX;
@@ -710,29 +712,36 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     nextPos.x = fmax(screenBounds.origin.x, fmin(nextPos.x, screenBounds.origin.x + screenBounds.size.width));
     nextPos.y = fmax(screenBounds.origin.y, fmin(nextPos.y, screenBounds.origin.y + screenBounds.size.height));
 
-    CGPoint eventPos = cursorVisible ? nextPos : currentPos;
     CGMouseButton eventButton = kCGMouseButtonLeft;
     CGEventType eventType = kCGEventMouseMoved;
-    if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft)) {
+    if (_leftMouseHeld) {
         eventType = kCGEventLeftMouseDragged;
         eventButton = kCGMouseButtonLeft;
-    } else if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight)) {
+    } else if (_rightMouseHeld) {
         eventType = kCGEventRightMouseDragged;
         eventButton = kCGMouseButtonRight;
-    } else if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonCenter)) {
+    } else if (_middleMouseHeld) {
         eventType = kCGEventOtherMouseDragged;
         eventButton = kCGMouseButtonCenter;
     }
-    CGEventRef moveEvent = CGEventCreateMouseEvent(NULL, eventType, eventPos, eventButton);
-    if (moveEvent) {
-        CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
-        CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
-        [self postEventToAllTaps:moveEvent];
-        CFRelease(moveEvent);
+
+    CGEventRef relativeEvent = CGEventCreateMouseEvent(NULL, eventType, currentPos, eventButton);
+    if (relativeEvent) {
+        CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
+        CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
+        [self postEventToAllTaps:relativeEvent];
+        CFRelease(relativeEvent);
     }
-    if (cursorVisible) {
-        CGWarpMouseCursorPosition(nextPos);
+
+    CGEventRef absoluteEvent = CGEventCreateMouseEvent(NULL, eventType, nextPos, eventButton);
+    if (absoluteEvent) {
+        CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
+        CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
+        [self postEventToAllTaps:absoluteEvent];
+        CFRelease(absoluteEvent);
     }
+
+    CGWarpMouseCursorPosition(nextPos);
 }
 
 - (void)openLaunchpad {
@@ -861,7 +870,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return;
     }
 
-    [_screenRecordingTask terminate];
+    [_screenRecordingTask interrupt];
+    usleep(250000);
+    if (_screenRecordingTask.isRunning) {
+        [_screenRecordingTask terminate];
+    }
     [_screenRecordingTask waitUntilExit];
     [_screenRecordingTask release];
     _screenRecordingTask = nil;
@@ -947,6 +960,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         state.stickLeft = false;
         state.stickRight = false;
     }
+
+    _leftMouseHeld = NO;
+    _rightMouseHeld = NO;
+    _middleMouseHeld = NO;
 }
 
 - (void)sendHIDReportFromJoyconData:(NSDictionary *)joyconData {
@@ -1330,6 +1347,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 }
 
 - (void)postMouseButton:(CGMouseButton)button down:(BOOL)down {
+    if (button == kCGMouseButtonLeft) {
+        _leftMouseHeld = down;
+    } else if (button == kCGMouseButtonRight) {
+        _rightMouseHeld = down;
+    } else {
+        _middleMouseHeld = down;
+    }
+
     CGEventRef tempEvent = CGEventCreate(NULL);
     CGPoint currentPos = CGEventGetLocation(tempEvent);
     CFRelease(tempEvent);
@@ -1347,6 +1372,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!clickEvent) {
         return;
     }
+    CGEventSetIntegerValueField(clickEvent, kCGMouseEventClickState, 1);
     [self postEventToAllTaps:clickEvent];
     CFRelease(clickEvent);
 }
