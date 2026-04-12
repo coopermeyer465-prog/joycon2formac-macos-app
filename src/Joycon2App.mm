@@ -177,7 +177,6 @@ static NSString* BindingSummaryFromValue(id value) {
 @interface Joycon2AppDelegate : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate>
 @property (strong, nonatomic) NSWindow* window;
 @property (strong, nonatomic) NSTextField* statusLabel;
-@property (strong, nonatomic) NSPopUpButton* modePopup;
 @property (strong, nonatomic) NSButton* toggleButton;
 @property (strong, nonatomic) NSTextField* configPathLabel;
 @property (strong, nonatomic) NSTableView* bindingsTable;
@@ -239,15 +238,7 @@ static NSString* BindingSummaryFromValue(id value) {
 }
 
 - (NSString*)currentModeKey {
-    switch (self.modePopup.indexOfSelectedItem) {
-        case 1:
-            return @"mouse";
-        case 2:
-            return @"keyboard";
-        case 0:
-        default:
-            return @"hybrid";
-    }
+    return @"hybrid";
 }
 
 - (void)loadConfigDocument {
@@ -325,39 +316,28 @@ static NSString* BindingSummaryFromValue(id value) {
                                        font:[NSFont systemFontOfSize:13]];
     [contentView addSubview:self.statusLabel];
 
-    NSTextField* modeLabel = [self labelWithFrame:NSMakeRect(24, 522, 80, 22)
-                                              text:@"Mode"
-                                              font:[NSFont systemFontOfSize:13]];
-    [contentView addSubview:modeLabel];
-
-    self.modePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(110, 518, 170, 28) pullsDown:NO];
-    [self.modePopup addItemsWithTitles:@[@"Hybrid", @"Mouse", @"Keyboard"]];
-    [self.modePopup setTarget:self];
-    [self.modePopup setAction:@selector(modeChanged:)];
-    [contentView addSubview:self.modePopup];
-
-    self.toggleButton = [[NSButton alloc] initWithFrame:NSMakeRect(300, 516, 120, 32)];
+    self.toggleButton = [[NSButton alloc] initWithFrame:NSMakeRect(24, 516, 120, 32)];
     [self.toggleButton setBezelStyle:NSBezelStyleRounded];
     [self.toggleButton setTitle:@"Stop"];
     [self.toggleButton setTarget:self];
     [self.toggleButton setAction:@selector(toggleRunning:)];
     [contentView addSubview:self.toggleButton];
 
-    NSButton* mapButton = [[NSButton alloc] initWithFrame:NSMakeRect(24, 476, 170, 30)];
+    NSButton* mapButton = [[NSButton alloc] initWithFrame:NSMakeRect(158, 516, 170, 30)];
     [mapButton setBezelStyle:NSBezelStyleRounded];
     [mapButton setTitle:@"Map Joy-Con Button"];
     [mapButton setTarget:self];
     [mapButton setAction:@selector(beginMappingFlow:)];
     [contentView addSubview:mapButton];
 
-    NSButton* resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(208, 476, 130, 30)];
+    NSButton* resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(342, 516, 130, 30)];
     [resetButton setBezelStyle:NSBezelStyleRounded];
     [resetButton setTitle:@"Restore Defaults"];
     [resetButton setTarget:self];
     [resetButton setAction:@selector(restoreDefaults:)];
     [contentView addSubview:resetButton];
 
-    NSButton* openConfigButton = [[NSButton alloc] initWithFrame:NSMakeRect(352, 476, 150, 30)];
+    NSButton* openConfigButton = [[NSButton alloc] initWithFrame:NSMakeRect(486, 516, 150, 30)];
     [openConfigButton setBezelStyle:NSBezelStyleRounded];
     [openConfigButton setTitle:@"Open Config Folder"];
     [openConfigButton setTarget:self];
@@ -431,15 +411,7 @@ static NSString* BindingSummaryFromValue(id value) {
 }
 
 - (EmulationMode)selectedMode {
-    switch (self.modePopup.indexOfSelectedItem) {
-        case 1:
-            return MODE_MOUSE;
-        case 2:
-            return MODE_KEYBOARD;
-        case 0:
-        default:
-            return MODE_HYBRID;
-    }
+    return MODE_HYBRID;
 }
 
 - (void)startController {
@@ -546,17 +518,6 @@ static NSString* BindingSummaryFromValue(id value) {
     if (self.running) {
         [self stopController];
     } else {
-        [self startController];
-    }
-}
-
-- (void)modeChanged:(id)sender {
-    BOOL wasRunning = self.running;
-    if (wasRunning) {
-        [self stopController];
-    }
-    [self refreshBindingsTable];
-    if (wasRunning) {
         [self startController];
     }
 }
