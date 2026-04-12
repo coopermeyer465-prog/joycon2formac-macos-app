@@ -1106,6 +1106,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     NSString* deviceTypeString = joyconData[@"DeviceType"] ?: @"Unknown";
     NSString* identifier = joyconData[@"PeripheralIdentifier"] ?: @"unknown";
     std::string deviceType = [deviceTypeString UTF8String];
+    std::string identifierKey = [identifier UTF8String];
 
     if (deviceType == "L" && !_config.enableLeftJoyCon) {
         return;
@@ -1116,7 +1117,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     BOOL mouseEnabled = YES;
     BOOL keyboardEnabled = YES;
 
-    DeviceState& state = _deviceStates[[identifier UTF8String]];
+    bool isNewDevice = _deviceStates.find(identifierKey) == _deviceStates.end();
+    DeviceState& state = _deviceStates[identifierKey];
+    if (isNewDevice && (deviceType == "R" || deviceType == "Unknown")) {
+        _hasCursorPosition = NO;
+    }
 
     if (mouseMotionEnabled && (deviceType == "R" || deviceType == "Unknown")) {
         [self processMouseSensorFromData:joyconData state:state];
@@ -1126,15 +1131,19 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     uint32_t buttons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
     if (self.emulationMode == MODE_MOUSE) {
         const uint32_t mousePrimaryMask = 0x00004000;
+        const uint32_t mousePrimaryFallbackMask = 0x00001000;
         NSNumber* triggerRNumber = joyconData[@"TriggerR"];
         int triggerRValue = triggerRNumber ? [triggerRNumber intValue] : 0;
         bool shoulderFallbackPressed = triggerRValue > 0 && (buttons & 0x00008000) == 0;
-        bool primaryPressed = (buttons & mousePrimaryMask) != 0 || shoulderFallbackPressed;
+        bool primaryPressed = (buttons & mousePrimaryMask) != 0 ||
+                              (buttons & mousePrimaryFallbackMask) != 0 ||
+                              shoulderFallbackPressed;
         if (primaryPressed != state.mouseModePrimaryPressed) {
             [self postMouseButton:kCGMouseButtonLeft down:primaryPressed];
             state.mouseModePrimaryPressed = primaryPressed;
         }
         buttons &= ~mousePrimaryMask;
+        buttons &= ~mousePrimaryFallbackMask;
     }
     [self processButtonBindings:buttons state:state keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
 
