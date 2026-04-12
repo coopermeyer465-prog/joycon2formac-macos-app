@@ -127,7 +127,9 @@ static NSString* FriendlyActionString(NSString* action) {
         @"mouse:scroll_right": @"Scroll Right",
         @"system:launchpad": @"Launchpad",
         @"system:screenshot": @"Screenshot / Record",
-        @"system:discord": @"Open Discord"
+        @"system:discord": @"Open Discord",
+        @"system:space_click": @"Space + Left Click",
+        @"system:shift_delete": @"Shift + Delete"
     };
     NSString* exact = friendly[action];
     return exact ?: action;

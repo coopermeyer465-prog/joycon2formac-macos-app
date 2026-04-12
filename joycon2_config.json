@@ -20,11 +20,8 @@
   "bindings": {},
   "modeBindings": {
     "mouse": {
-      "A": "key:space",
-      "B": {
-        "press": "key:left_shift",
-        "tap": "key:delete"
-      },
+      "A": "system:space_click",
+      "B": "system:shift_delete",
       "R": "mouse:left",
       "ZR": "mouse:right",
       "X": "key:f",
@@ -48,11 +45,8 @@
       "CHAT": "system:discord"
     },
     "hybrid": {
-      "A": "key:space",
-      "B": {
-        "press": "key:left_shift",
-        "tap": "key:delete"
-      },
+      "A": "system:space_click",
+      "B": "system:shift_delete",
       "R": "mouse:scroll_down",
       "ZR": "mouse:right",
       "X": "key:f",
@@ -76,11 +70,8 @@
       "CHAT": "system:discord"
     },
     "keyboard": {
-      "A": "key:space",
-      "B": {
-        "press": "key:left_shift",
-        "tap": "key:delete"
-      },
+      "A": "system:space_click",
+      "B": "system:shift_delete",
       "R": "key:return",
       "ZR": "key:left_control",
       "X": "key:f",

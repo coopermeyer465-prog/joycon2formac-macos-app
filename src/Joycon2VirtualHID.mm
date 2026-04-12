@@ -25,7 +25,9 @@ typedef NS_ENUM(NSInteger, BindingActionKind) {
 typedef NS_ENUM(NSInteger, BindingMacroKind) {
     BindingMacroKindNone = 0,
     BindingMacroKindPOV,
-    BindingMacroKindDoubleW
+    BindingMacroKindDoubleW,
+    BindingMacroKindSpaceClick,
+    BindingMacroKindShiftDelete
 };
 
 struct MouseConfig {
@@ -254,6 +256,12 @@ static BindingAction ParseActionString(NSString* actionString, const RuntimeConf
         } else if (target == "double_w") {
             action.kind = BindingActionKindMacro;
             action.macroKind = BindingMacroKindDoubleW;
+        } else if (target == "space_click") {
+            action.kind = BindingActionKindMacro;
+            action.macroKind = BindingMacroKindSpaceClick;
+        } else if (target == "shift_delete") {
+            action.kind = BindingActionKindMacro;
+            action.macroKind = BindingMacroKindShiftDelete;
         }
     }
 
@@ -333,6 +341,7 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)openLaunchpad;
 - (void)openURLString:(const std::string&)urlString;
 - (void)runMacro:(BindingMacroKind)macroKind;
+- (void)performComboMacro:(BindingMacroKind)macroKind down:(BOOL)down keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
 - (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension;
 - (void)takeScreenshot;
 - (void)startScreenRecording;
@@ -531,10 +540,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _config.keyboardBindings.clear();
     _config.hybridBindings.clear();
 
-    bindPress(_config.mouseBindings, "A", @"key:space");
+    bindPress(_config.mouseBindings, "A", @"system:space_click");
     bindPress(_config.mouseBindings, "R", @"mouse:left");
-    bindPress(_config.mouseBindings, "B", @"key:left_shift");
-    bindTap(_config.mouseBindings, "B", @"key:delete");
+    bindPress(_config.mouseBindings, "B", @"system:shift_delete");
     bindPress(_config.mouseBindings, "ZR", @"mouse:right");
     bindPress(_config.mouseBindings, "X", @"key:f");
     bindPress(_config.mouseBindings, "Y", @"key:e");
@@ -556,9 +564,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.mouseBindings, "CAMERA", @"system:screenshot");
     bindPress(_config.mouseBindings, "CHAT", @"system:discord");
 
-    bindPress(_config.hybridBindings, "A", @"key:space");
-    bindPress(_config.hybridBindings, "B", @"key:left_shift");
-    bindTap(_config.hybridBindings, "B", @"key:delete");
+    bindPress(_config.hybridBindings, "A", @"system:space_click");
+    bindPress(_config.hybridBindings, "B", @"system:shift_delete");
     bindPress(_config.hybridBindings, "X", @"key:f");
     bindPress(_config.hybridBindings, "Y", @"key:e");
     bindPress(_config.hybridBindings, "R", @"mouse:scroll_down");
@@ -581,9 +588,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.hybridBindings, "CAMERA", @"system:screenshot");
     bindPress(_config.hybridBindings, "CHAT", @"system:discord");
 
-    bindPress(_config.keyboardBindings, "A", @"key:space");
-    bindPress(_config.keyboardBindings, "B", @"key:left_shift");
-    bindTap(_config.keyboardBindings, "B", @"key:delete");
+    bindPress(_config.keyboardBindings, "A", @"system:space_click");
+    bindPress(_config.keyboardBindings, "B", @"system:shift_delete");
     bindPress(_config.keyboardBindings, "X", @"key:f");
     bindPress(_config.keyboardBindings, "Y", @"key:e");
     bindPress(_config.keyboardBindings, "R", @"key:return");
@@ -698,7 +704,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (moveEvent) {
         CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
         CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
-        CGEventPost(kCGHIDEventTap, moveEvent);
+        CGEventPost(kCGSessionEventTap, moveEvent);
         CFRelease(moveEvent);
     }
     if (cursorVisible) {
@@ -743,6 +749,32 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             [self postKeyboardEventForKeyCode:13 down:YES];
             [self postKeyboardEventForKeyCode:13 down:NO];
             break;
+        case BindingMacroKindSpaceClick:
+        case BindingMacroKindShiftDelete:
+        case BindingMacroKindNone:
+        default:
+            break;
+    }
+}
+
+- (void)performComboMacro:(BindingMacroKind)macroKind down:(BOOL)down keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {
+    switch (macroKind) {
+        case BindingMacroKindSpaceClick:
+            if (keyboardEnabled) {
+                [self postKeyboardEventForKeyCode:49 down:down];
+            }
+            if (mouseEnabled) {
+                [self postMouseButton:kCGMouseButtonLeft down:down];
+            }
+            break;
+        case BindingMacroKindShiftDelete:
+            if (keyboardEnabled) {
+                [self postKeyboardEventForKeyCode:56 down:down];
+                [self postKeyboardEventForKeyCode:51 down:down];
+            }
+            break;
+        case BindingMacroKindPOV:
+        case BindingMacroKindDoubleW:
         case BindingMacroKindNone:
         default:
             break;
@@ -751,14 +783,12 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
 - (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension {
     NSString* documentsDirectory = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    NSString* capturesDirectory = [documentsDirectory stringByAppendingPathComponent:@"JoyCon2forMac Captures"];
-    [[NSFileManager defaultManager] createDirectoryAtPath:capturesDirectory withIntermediateDirectories:YES attributes:nil error:nil];
     NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
     formatter.dateFormat = @"yyyy-MM-dd_HH-mm-ss";
     NSString* timestamp = [formatter stringFromDate:[NSDate date]];
     [formatter release];
     NSString* fileName = [NSString stringWithFormat:@"%@_%@.%@", prefix, timestamp, extension];
-    return [capturesDirectory stringByAppendingPathComponent:fileName];
+    return [documentsDirectory stringByAppendingPathComponent:fileName];
 }
 
 - (void)takeScreenshot {
@@ -901,7 +931,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     DeviceState& state = _deviceStates[[identifier UTF8String]];
 
-    if (mouseMotionEnabled && deviceType == "R") {
+    if (mouseMotionEnabled && (deviceType == "R" || deviceType == "Unknown")) {
         [self processMouseSensorFromData:joyconData state:state];
     }
 
@@ -1013,10 +1043,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return NO;
     }
 
-    if (CGCursorIsVisible()) {
-        return NO;
-    }
-
     double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
     double normalizedY = (2047.0 - [rightStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
@@ -1063,7 +1089,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             }
             break;
         case BindingActionKindMacro:
-            if (down) {
+            if (action.macroKind == BindingMacroKindSpaceClick || action.macroKind == BindingMacroKindShiftDelete) {
+                [self performComboMacro:action.macroKind down:down keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+            } else if (down) {
                 [self runMacro:action.macroKind];
             }
             break;
@@ -1103,7 +1131,12 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             [self openURLString:action.url];
             break;
         case BindingActionKindMacro:
-            [self runMacro:action.macroKind];
+            if (action.macroKind == BindingMacroKindSpaceClick || action.macroKind == BindingMacroKindShiftDelete) {
+                [self performComboMacro:action.macroKind down:YES keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+                [self performComboMacro:action.macroKind down:NO keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+            } else {
+                [self runMacro:action.macroKind];
+            }
             break;
         case BindingActionKindNone:
         default:
@@ -1236,7 +1269,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!event) {
         return;
     }
-    CGEventPost(kCGHIDEventTap, event);
+    CGEventPost(kCGSessionEventTap, event);
     CFRelease(event);
 }
 
@@ -1250,8 +1283,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
     CGEventSetFlags(downEvent, flags);
     CGEventSetFlags(upEvent, flags);
-    CGEventPost(kCGHIDEventTap, downEvent);
-    CGEventPost(kCGHIDEventTap, upEvent);
+    CGEventPost(kCGSessionEventTap, downEvent);
+    CGEventPost(kCGSessionEventTap, upEvent);
     CFRelease(downEvent);
     CFRelease(upEvent);
 }
@@ -1274,7 +1307,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!clickEvent) {
         return;
     }
-    CGEventPost(kCGHIDEventTap, clickEvent);
+    CGEventPost(kCGSessionEventTap, clickEvent);
     CFRelease(clickEvent);
 }
 
@@ -1287,7 +1320,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!wheelEvent) {
         return;
     }
-    CGEventPost(kCGHIDEventTap, wheelEvent);
+    CGEventPost(kCGSessionEventTap, wheelEvent);
     CFRelease(wheelEvent);
 }
 

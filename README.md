@@ -305,7 +305,7 @@ Examples:
 - Button bindings still work in hybrid mode for either controller that is allowed by config.
 - Left stick to keyboard is evaluated from left-controller packets, which avoids the right Joy-Con accidentally cancelling stick directions.
 - The screenshot button supports two behaviors by default: tap for a full-screen screenshot in Documents, hold for about 1 second to start screen recording, then tap again to stop and save the recording to Documents.
-- Captures are saved in `~/Documents/JoyCon2forMac Captures`.
+- Captures are saved directly in `~/Documents`.
 - Launchpad is triggered through the macOS Launchpad special-key path first, with the keyboard F4 path kept as a fallback.
 
 ## Troubleshooting
