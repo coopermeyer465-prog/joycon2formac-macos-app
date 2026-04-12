@@ -21,6 +21,9 @@ typedef NS_ENUM(NSInteger, BindingActionKind) {
     BindingActionKindLaunchpad,
     BindingActionKindScreenshot,
     BindingActionKindOpenURL,
+    BindingActionKindOpenApp,
+    BindingActionKindRunShellCommand,
+    BindingActionKindOpenFile,
     BindingActionKindMacro
 };
 
@@ -57,6 +60,7 @@ struct BindingAction {
     int scrollX = 0;
     int scrollY = 0;
     std::string url;
+    std::string auxiliary;
     std::string description;
 };
 
@@ -204,13 +208,14 @@ static BindingAction ParseActionString(NSString* actionString, const RuntimeConf
         return action;
     }
 
-    NSArray<NSString*>* parts = [trimmed componentsSeparatedByString:@":"];
-    if (parts.count != 2) {
+    NSRange colonRange = [trimmed rangeOfString:@":"];
+    if (colonRange.location == NSNotFound) {
         return action;
     }
 
-    NSString* category = [parts[0] lowercaseString];
-    std::string target = NormalizeKeyName([parts[1] UTF8String]);
+    NSString* category = [[trimmed substringToIndex:colonRange.location] lowercaseString];
+    NSString* rawTarget = [trimmed substringFromIndex:colonRange.location + 1];
+    std::string target = NormalizeKeyName([rawTarget UTF8String]);
     action.description = [trimmed UTF8String];
 
     if ([category isEqualToString:@"key"]) {
@@ -269,6 +274,36 @@ static BindingAction ParseActionString(NSString* actionString, const RuntimeConf
             action.kind = BindingActionKindMacro;
             action.macroKind = BindingMacroKindShiftDelete;
         }
+    }
+
+    if ([category isEqualToString:@"app"]) {
+        action.kind = BindingActionKindOpenApp;
+        action.url = [rawTarget UTF8String];
+        return action;
+    }
+
+    if ([category isEqualToString:@"shell"]) {
+        action.kind = BindingActionKindRunShellCommand;
+        action.url = [rawTarget UTF8String];
+        return action;
+    }
+
+    if ([category isEqualToString:@"file"]) {
+        action.kind = BindingActionKindOpenFile;
+        action.url = [rawTarget UTF8String];
+        return action;
+    }
+
+    if ([category isEqualToString:@"file_with"]) {
+        action.kind = BindingActionKindOpenFile;
+        NSArray<NSString*>* fileParts = [rawTarget componentsSeparatedByString:@"\t"];
+        if (fileParts.count > 0) {
+            action.url = [fileParts[0] UTF8String];
+        }
+        if (fileParts.count > 1) {
+            action.auxiliary = [fileParts[1] UTF8String];
+        }
+        return action;
     }
 
     return action;
@@ -357,6 +392,9 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY;
 - (void)openLaunchpad;
 - (void)openURLString:(const std::string&)urlString;
+- (void)openApplicationTarget:(const std::string&)appTarget;
+- (void)runShellCommandString:(const std::string&)commandString;
+- (void)openFilePath:(const std::string&)filePath withApplication:(const std::string&)applicationTarget;
 - (void)runMacro:(BindingMacroKind)macroKind;
 - (void)performComboMacro:(BindingMacroKind)macroKind down:(BOOL)down keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
 - (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension;
@@ -815,6 +853,72 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (targetURL) {
         [[NSWorkspace sharedWorkspace] openURL:targetURL];
     }
+}
+
+- (void)openApplicationTarget:(const std::string&)appTarget {
+    if (appTarget.empty()) {
+        return;
+    }
+    NSString* target = [NSString stringWithUTF8String:appTarget.c_str()];
+    if (!target.length) {
+        return;
+    }
+
+    NSString* expandedTarget = [target stringByExpandingTildeInPath];
+    if ([expandedTarget hasPrefix:@"/"] || [expandedTarget hasSuffix:@".app"]) {
+        NSURL* appURL = [NSURL fileURLWithPath:expandedTarget];
+        if (appURL) {
+            [[NSWorkspace sharedWorkspace] openURL:appURL];
+            return;
+        }
+    }
+
+    NSTask* task = [[NSTask alloc] init];
+    task.launchPath = @"/usr/bin/open";
+    task.arguments = @[@"-a", target];
+    [task launch];
+    [task release];
+}
+
+- (void)runShellCommandString:(const std::string&)commandString {
+    if (commandString.empty()) {
+        return;
+    }
+    NSString* command = [NSString stringWithUTF8String:commandString.c_str()];
+    if (!command.length) {
+        return;
+    }
+
+    NSTask* task = [[NSTask alloc] init];
+    task.launchPath = @"/bin/zsh";
+    task.arguments = @[@"-lc", command];
+    [task launch];
+    [task release];
+}
+
+- (void)openFilePath:(const std::string&)filePath withApplication:(const std::string&)applicationTarget {
+    if (filePath.empty()) {
+        return;
+    }
+    NSString* targetPath = [[NSString stringWithUTF8String:filePath.c_str()] stringByExpandingTildeInPath];
+    if (!targetPath.length) {
+        return;
+    }
+
+    if (applicationTarget.empty()) {
+        NSURL* fileURL = [NSURL fileURLWithPath:targetPath];
+        if (fileURL) {
+            [[NSWorkspace sharedWorkspace] openURL:fileURL];
+        }
+        return;
+    }
+
+    NSString* appTarget = [[NSString stringWithUTF8String:applicationTarget.c_str()] stringByExpandingTildeInPath];
+    NSTask* task = [[NSTask alloc] init];
+    task.launchPath = @"/usr/bin/open";
+    task.arguments = @[@"-a", appTarget, targetPath];
+    [task launch];
+    [task release];
 }
 
 - (void)runMacro:(BindingMacroKind)macroKind {
@@ -1318,6 +1422,21 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
                 [self openURLString:action.url];
             }
             break;
+        case BindingActionKindOpenApp:
+            if (down) {
+                [self openApplicationTarget:action.url];
+            }
+            break;
+        case BindingActionKindRunShellCommand:
+            if (down) {
+                [self runShellCommandString:action.url];
+            }
+            break;
+        case BindingActionKindOpenFile:
+            if (down) {
+                [self openFilePath:action.url withApplication:action.auxiliary];
+            }
+            break;
         case BindingActionKindMacro:
             if (action.macroKind == BindingMacroKindSpaceClick || action.macroKind == BindingMacroKindShiftDelete) {
                 [self performComboMacro:action.macroKind down:down keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
@@ -1359,6 +1478,15 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             break;
         case BindingActionKindOpenURL:
             [self openURLString:action.url];
+            break;
+        case BindingActionKindOpenApp:
+            [self openApplicationTarget:action.url];
+            break;
+        case BindingActionKindRunShellCommand:
+            [self runShellCommandString:action.url];
+            break;
+        case BindingActionKindOpenFile:
+            [self openFilePath:action.url withApplication:action.auxiliary];
             break;
         case BindingActionKindMacro:
             if (action.macroKind == BindingMacroKindSpaceClick || action.macroKind == BindingMacroKindShiftDelete) {

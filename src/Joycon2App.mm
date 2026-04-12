@@ -132,7 +132,26 @@ static NSString* FriendlyActionString(NSString* action) {
         @"system:shift_delete": @"Shift + Delete"
     };
     NSString* exact = friendly[action];
-    return exact ?: action;
+    if (exact) {
+        return exact;
+    }
+    if ([action hasPrefix:@"app:"]) {
+        return [NSString stringWithFormat:@"Open App: %@", [action substringFromIndex:4]];
+    }
+    if ([action hasPrefix:@"shell:"]) {
+        return [NSString stringWithFormat:@"Run Command: %@", [action substringFromIndex:6]];
+    }
+    if ([action hasPrefix:@"file_with:"]) {
+        NSString* payload = [action substringFromIndex:10];
+        NSArray<NSString*>* parts = [payload componentsSeparatedByString:@"\t"];
+        NSString* filePart = parts.count > 0 ? [parts[0] lastPathComponent] : payload;
+        NSString* appPart = parts.count > 1 ? [parts[1] lastPathComponent] : @"chosen app";
+        return [NSString stringWithFormat:@"Open %@ With %@", filePart, appPart];
+    }
+    if ([action hasPrefix:@"file:"]) {
+        return [NSString stringWithFormat:@"Open File: %@", [[action substringFromIndex:5] lastPathComponent]];
+    }
+    return action;
 }
 
 static NSString* BindingSummaryFromValue(id value) {
@@ -372,7 +391,7 @@ static NSString* BindingSummaryFromValue(id value) {
     [contentView addSubview:tableScrollView];
 
     NSTextField* controls = [self labelWithFrame:NSMakeRect(24, 24, 772, 68)
-                                             text:@"Click “Map Joy-Con Button”, press the controller button you want to change, then choose whether it should use a normal press / hold action or a tap-only action. For a normal press / hold action, a quick tap triggers the same output once and holding the Joy-Con button keeps that output held. Keyboard bindings are learned by pressing the Mac key you want. Mouse actions and system actions come from popups."
+                                             text:@"Click “Map Joy-Con Button”, press the controller button you want to change, then choose whether it should use a normal press / hold action or a tap-only action. For a normal press / hold action, a quick tap triggers the same output once and holding the Joy-Con button keeps that output held. Keyboard bindings are learned by pressing the Mac key you want. Mouse actions, system actions, app launches, terminal commands, and file opens come from popups."
                                              font:[NSFont systemFontOfSize:12]];
     [controls setLineBreakMode:NSLineBreakByWordWrapping];
     [controls setUsesSingleLineMode:NO];
@@ -613,10 +632,67 @@ static NSString* BindingSummaryFromValue(id value) {
     return [NSString stringWithFormat:@"key:%@", capturedKey];
 }
 
+- (NSString*)promptForTextWithTitle:(NSString*)title message:(NSString*)message defaultValue:(NSString*)defaultValue {
+    NSAlert* alert = [[NSAlert alloc] init];
+    [alert setMessageText:title];
+    [alert setInformativeText:message ?: @""];
+    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* field = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 320, 24)];
+    [field setStringValue:defaultValue ?: @""];
+    [alert setAccessoryView:field];
+
+    NSModalResponse response = [alert runModal];
+    NSString* value = response == NSAlertFirstButtonReturn ? [[field stringValue] copy] : nil;
+    [field release];
+    [alert release];
+    return [value autorelease];
+}
+
+- (NSString*)chooseApplicationTarget {
+    NSString* choice = [self promptWithTitle:@"Choose App Source"
+                                     message:@"Choose an installed app bundle or type an app name / path."
+                                     options:@[@"Choose App Bundle", @"Type App Name or Path"]];
+    if (!choice) {
+        return nil;
+    }
+    if ([choice isEqualToString:@"Type App Name or Path"]) {
+        return [self promptForTextWithTitle:@"App Name or Path"
+                                    message:@"Enter an app name like Safari or a full path to an .app bundle."
+                               defaultValue:@""];
+    }
+
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = YES;
+    panel.allowsMultipleSelection = NO;
+    panel.canCreateDirectories = NO;
+    panel.allowedFileTypes = @[@"app"];
+    NSModalResponse response = [panel runModal];
+    if (response != NSModalResponseOK) {
+        return nil;
+    }
+    return panel.URL.path;
+}
+
+- (NSString*)chooseFileTargetPath {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = YES;
+    panel.allowsMultipleSelection = NO;
+    panel.canCreateDirectories = NO;
+    NSModalResponse response = [panel runModal];
+    if (response != NSModalResponseOK) {
+        return nil;
+    }
+    return panel.URL.path;
+}
+
 - (NSString*)promptForActionWithPrompt:(NSString*)prompt {
     NSString* category = [self promptWithTitle:@"Choose Output Type"
                                        message:prompt
-                                       options:@[@"Keyboard Key", @"Mouse Action", @"System Action", @"Clear Binding"]];
+                                       options:@[@"Keyboard Key", @"Mouse Action", @"System Action", @"Open App", @"Run Terminal Command", @"Open File", @"Clear Binding"]];
     if (!category) {
         return nil;
     }
@@ -625,6 +701,33 @@ static NSString* BindingSummaryFromValue(id value) {
     }
     if ([category isEqualToString:@"Keyboard Key"]) {
         return [self keyboardBindingFromCapturedKey];
+    }
+    if ([category isEqualToString:@"Open App"]) {
+        NSString* appTarget = [self chooseApplicationTarget];
+        return appTarget.length > 0 ? [NSString stringWithFormat:@"app:%@", appTarget] : nil;
+    }
+    if ([category isEqualToString:@"Run Terminal Command"]) {
+        NSString* command = [self promptForTextWithTitle:@"Terminal Command"
+                                                 message:@"Enter the shell command to run when this Joy-Con button is used."
+                                            defaultValue:@""];
+        return command.length > 0 ? [NSString stringWithFormat:@"shell:%@", command] : nil;
+    }
+    if ([category isEqualToString:@"Open File"]) {
+        NSString* fileTarget = [self chooseFileTargetPath];
+        if (fileTarget.length == 0) {
+            return nil;
+        }
+        NSString* fileMode = [self promptWithTitle:@"Choose File Open Mode"
+                                           message:@"Open the file with its default app or choose a specific app."
+                                           options:@[@"Default App", @"Choose Specific App"]];
+        if (!fileMode) {
+            return nil;
+        }
+        if ([fileMode isEqualToString:@"Default App"]) {
+            return [NSString stringWithFormat:@"file:%@", fileTarget];
+        }
+        NSString* appTarget = [self chooseApplicationTarget];
+        return appTarget.length > 0 ? [NSString stringWithFormat:@"file_with:%@\t%@", fileTarget, appTarget] : nil;
     }
     if ([category isEqualToString:@"Mouse Action"]) {
         NSDictionary* actionMap = @{
