@@ -1255,6 +1255,12 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return NO;
     }
 
+    if (CGCursorIsVisible()) {
+        state.smoothedRightStickX = 0.0;
+        state.smoothedRightStickY = 0.0;
+        return NO;
+    }
+
     double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
     double normalizedY = (2047.0 - [rightStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
@@ -1274,14 +1280,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     normalizedX = state.smoothedRightStickX;
     normalizedY = state.smoothedRightStickY;
+    if (std::fabs(normalizedX) < 0.01) normalizedX = 0.0;
+    if (std::fabs(normalizedY) < 0.01) normalizedY = 0.0;
     if (normalizedX == 0.0 && normalizedY == 0.0) {
         return NO;
     }
 
     double scale = std::max(10.0, _config.mouse.maxStep * 0.85);
-    if (!CGCursorIsVisible()) {
-        scale *= 0.12;
-    }
+    scale *= 0.12;
     double deltaX = normalizedX * scale;
     double deltaY = normalizedY * scale;
 
