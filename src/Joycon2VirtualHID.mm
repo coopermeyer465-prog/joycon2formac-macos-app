@@ -77,6 +77,7 @@ struct RuntimeConfig {
 
 struct DeviceState {
     uint32_t lastButtons = 0;
+    bool mouseModePrimaryPressed = false;
     bool hasMouseSample = false;
     int16_t lastMouseX = 0;
     int16_t lastMouseY = 0;
@@ -334,6 +335,7 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
     NSTimer *_capturePreviewTimer;
     BOOL _hasCursorPosition;
     CGPoint _cursorPosition;
+    CFAbsoluteTime _lastDoubleWAt;
 }
 - (void)setupKeyboardEventTap;
 - (void)ensureAccessibilityPermission;
@@ -810,13 +812,19 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         case BindingMacroKindPOV:
             [self postKeyboardTapForKeyCode:96 flags:kCGEventFlagMaskSecondaryFn];
             break;
-        case BindingMacroKindDoubleW:
+        case BindingMacroKindDoubleW: {
+            CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+            if (_lastDoubleWAt > 0.0 && (now - _lastDoubleWAt) < 1.0) {
+                break;
+            }
+            _lastDoubleWAt = now;
             [self postKeyboardEventForKeyCode:13 down:YES];
             [self postKeyboardEventForKeyCode:13 down:NO];
             usleep(25000);
             [self postKeyboardEventForKeyCode:13 down:YES];
             [self postKeyboardEventForKeyCode:13 down:NO];
             break;
+        }
         case BindingMacroKindSpaceClick:
         case BindingMacroKindShiftDelete:
         case BindingMacroKindNone:
@@ -831,7 +839,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             if (keyboardEnabled) {
                 [self postKeyboardEventForKeyCode:49 down:down];
             }
-            if (mouseEnabled) {
+            if (mouseEnabled && CGCursorIsVisible()) {
                 [self postMouseButton:kCGMouseButtonLeft down:down];
             }
             break;
@@ -1062,6 +1070,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         if (state.stickRight) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 124 : 2) down:NO];
 
         state.lastButtons = 0;
+        state.mouseModePrimaryPressed = false;
         state.buttonPressedAt.clear();
         state.stickUp = false;
         state.stickDown = false;
@@ -1073,6 +1082,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _rightMouseHeld = NO;
     _middleMouseHeld = NO;
     _hasCursorPosition = NO;
+    _lastDoubleWAt = 0.0;
 }
 
 - (void)sendHIDReportFromJoyconData:(NSDictionary *)joyconData {
@@ -1098,6 +1108,15 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     NSNumber* buttonsNumber = joyconData[@"Buttons"];
     uint32_t buttons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
+    if (self.emulationMode == MODE_MOUSE) {
+        const uint32_t mousePrimaryMask = 0x00004000;
+        bool primaryPressed = (buttons & mousePrimaryMask) != 0;
+        if (primaryPressed != state.mouseModePrimaryPressed) {
+            [self postMouseButton:kCGMouseButtonLeft down:primaryPressed];
+            state.mouseModePrimaryPressed = primaryPressed;
+        }
+        buttons &= ~mousePrimaryMask;
+    }
     [self processButtonBindings:buttons state:state keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
 
     if (leftStickEnabled && (deviceType == "L" || deviceType == "Unknown")) {
@@ -1184,6 +1203,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     double deltaX = state.smoothedDeltaX * _config.mouse.sensitivity;
     double deltaY = state.smoothedDeltaY * _config.mouse.sensitivity;
+    if (!CGCursorIsVisible()) {
+        deltaX *= 0.12;
+        deltaY *= 0.12;
+    }
     if (_config.mouse.invertX) deltaX = -deltaX;
     if (_config.mouse.invertY) deltaY = -deltaY;
 
@@ -1204,10 +1227,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return NO;
     }
 
-    if (CGCursorIsVisible()) {
-        return NO;
-    }
-
     double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
     double normalizedY = (2047.0 - [rightStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
@@ -1219,6 +1238,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     double scale = std::max(10.0, _config.mouse.maxStep * 0.85);
+    if (!CGCursorIsVisible()) {
+        scale *= 0.12;
+    }
     double deltaX = normalizedX * scale;
     double deltaY = normalizedY * scale;
 
@@ -1422,7 +1444,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     double normalizedX = ([leftStickX doubleValue] - 2047.0) / 2047.0;
-    double normalizedY = ([leftStickY doubleValue] - 2047.0) / 2047.0;
+    double normalizedY = (2047.0 - [leftStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
 
     bool up = normalizedY < -deadzone;
