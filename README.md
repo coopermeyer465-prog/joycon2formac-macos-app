@@ -77,6 +77,12 @@ Build outputs:
 - `build/JoyCon2forMac.app`
 - `build/Joycon2BLEReceiver`
 
+## Download
+
+- Source ZIP: [main.zip](https://github.com/coopermeyer465-prog/joycon2formac-macos-app/archive/refs/heads/main.zip)
+- Repository page: [coopermeyer465-prog/joycon2formac-macos-app](https://github.com/coopermeyer465-prog/joycon2formac-macos-app)
+- Releases page: [GitHub Releases](https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases)
+
 ## Run
 
 Default run uses `joycon2_config.json` in the repo root.

@@ -1095,6 +1095,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return NO;
     }
 
+    if (CGCursorIsVisible()) {
+        return NO;
+    }
+
     double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
     double normalizedY = (2047.0 - [rightStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
@@ -1199,6 +1203,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 - (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     const double tapThreshold = 0.30;
+    const double tapDebounce = 0.25;
     std::set<uint32_t> relevantMasks;
     for (const auto& entry : _config.bindings) relevantMasks.insert(entry.first);
     switch (self.emulationMode) {
@@ -1260,6 +1265,13 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             state.buttonPressedAt[mask] = now;
             if (binding->pressAction.kind != BindingActionKindNone) {
                 [self performPressAction:binding->pressAction down:YES keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+            } else if (binding->tapAction.kind != BindingActionKindNone) {
+                auto lastTapIt = state.lastTapActionAt.find(mask);
+                double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
+                if (elapsedSinceLastTap >= tapDebounce) {
+                    [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+                    state.lastTapActionAt[mask] = now;
+                }
             }
         } else {
             if (binding->pressAction.kind != BindingActionKindNone) {
@@ -1269,11 +1281,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             auto it = state.buttonPressedAt.find(mask);
             double duration = (it != state.buttonPressedAt.end()) ? (now - it->second) : 0.0;
             bool shouldTap = (binding->tapAction.kind != BindingActionKindNone) &&
-                             (binding->pressAction.kind == BindingActionKindNone || duration <= tapThreshold);
+                             (binding->pressAction.kind != BindingActionKindNone && duration <= tapThreshold);
             if (shouldTap) {
                 auto lastTapIt = state.lastTapActionAt.find(mask);
                 double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
-                if (elapsedSinceLastTap >= 0.12) {
+                if (elapsedSinceLastTap >= tapDebounce) {
                     [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
                     state.lastTapActionAt[mask] = now;
                 }
