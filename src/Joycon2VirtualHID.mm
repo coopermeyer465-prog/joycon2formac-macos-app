@@ -1,0 +1,954 @@
+#import "../include/Joycon2VirtualHID.h"
+#import <AppKit/AppKit.h>
+#import <ApplicationServices/ApplicationServices.h>
+#import <Foundation/Foundation.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cctype>
+#include <map>
+#include <set>
+#include <string>
+
+typedef NS_ENUM(NSInteger, BindingActionKind) {
+    BindingActionKindNone = 0,
+    BindingActionKindKey,
+    BindingActionKindMouseButton,
+    BindingActionKindScroll,
+    BindingActionKindLaunchpad
+};
+
+struct MouseConfig {
+    double sensitivity = 0.35;
+    double deadzone = 2.0;
+    double smoothing = 0.6;
+    double maxStep = 45.0;
+    double jumpThreshold = 800.0;
+    double calibrationSeconds = 1.0;
+    BOOL invertX = NO;
+    BOOL invertY = NO;
+    int scrollStep = 3;
+};
+
+struct KeyboardConfig {
+    double stickDeadzone = 0.35;
+    std::string leftStickMode = "wasd";
+};
+
+struct BindingAction {
+    BindingActionKind kind = BindingActionKindNone;
+    CGKeyCode keyCode = 0;
+    CGMouseButton mouseButton = kCGMouseButtonLeft;
+    int scrollX = 0;
+    int scrollY = 0;
+    std::string description;
+};
+
+struct RuntimeConfig {
+    EmulationMode defaultMode = MODE_HYBRID;
+    bool enableLeftJoyCon = true;
+    MouseConfig mouse;
+    KeyboardConfig keyboard;
+    std::map<uint32_t, BindingAction> bindings;
+    std::map<uint32_t, BindingAction> mouseBindings;
+    std::map<uint32_t, BindingAction> keyboardBindings;
+    std::map<uint32_t, BindingAction> hybridBindings;
+    std::string loadedFrom;
+};
+
+struct DeviceState {
+    uint32_t lastButtons = 0;
+    bool hasMouseSample = false;
+    int16_t lastMouseX = 0;
+    int16_t lastMouseY = 0;
+    double smoothedDeltaX = 0.0;
+    double smoothedDeltaY = 0.0;
+    double driftBiasX = 0.0;
+    double driftBiasY = 0.0;
+    CFAbsoluteTime calibrationEndsAt = 0.0;
+    bool stickUp = false;
+    bool stickDown = false;
+    bool stickLeft = false;
+    bool stickRight = false;
+};
+
+static std::string ToLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+static std::string UpperNoSpaces(std::string value) {
+    std::string normalized;
+    normalized.reserve(value.size());
+    for (unsigned char ch : value) {
+        if (std::isspace(ch)) {
+            continue;
+        }
+        normalized.push_back(static_cast<char>(std::toupper(ch)));
+    }
+    return normalized;
+}
+
+static std::string NormalizeKeyName(std::string value) {
+    value = ToLower(value);
+    std::replace(value.begin(), value.end(), '-', '_');
+    std::replace(value.begin(), value.end(), ' ', '_');
+    return value;
+}
+
+static double ClampDouble(double value, double minimum, double maximum) {
+    if (value < minimum) {
+        return minimum;
+    }
+    if (value > maximum) {
+        return maximum;
+    }
+    return value;
+}
+
+static std::map<std::string, uint32_t> ButtonMaskMap() {
+    return {
+        {"ZL", 0x80000000}, {"L", 0x40000000}, {"SELECT", 0x00010000},
+        {"LS", 0x00080000}, {"↓", 0x01000000}, {"UP", 0x02000000},
+        {"RIGHT", 0x04000000}, {"LEFT", 0x08000000}, {"CAMERA", 0x00200000},
+        {"SR(L)", 0x10000000}, {"SL(L)", 0x20000000}, {"HOME", 0x00100000},
+        {"CHAT", 0x00400000}, {"START", 0x00020000}, {"SR(R)", 0x00001000},
+        {"SL(R)", 0x00002000}, {"R", 0x00004000}, {"ZR", 0x00008000},
+        {"RS", 0x00040000}, {"Y", 0x00000100}, {"X", 0x00000200},
+        {"B", 0x00000400}, {"A", 0x00000800},
+        {"DOWN", 0x01000000}, {"^", 0x02000000}, {"→", 0x04000000}, {"←", 0x08000000}
+    };
+}
+
+static std::map<std::string, CGKeyCode> KeyCodeMap() {
+    return {
+        {"a", 0}, {"s", 1}, {"d", 2}, {"f", 3}, {"h", 4}, {"g", 5}, {"z", 6}, {"x", 7},
+        {"c", 8}, {"v", 9}, {"b", 11}, {"q", 12}, {"w", 13}, {"e", 14}, {"r", 15},
+        {"y", 16}, {"t", 17}, {"1", 18}, {"2", 19}, {"3", 20}, {"4", 21}, {"6", 22},
+        {"5", 23}, {"equal", 24}, {"9", 25}, {"7", 26}, {"minus", 27}, {"8", 28},
+        {"0", 29}, {"right_bracket", 30}, {"o", 31}, {"u", 32}, {"left_bracket", 33},
+        {"i", 34}, {"p", 35}, {"return", 36}, {"enter", 36}, {"l", 37}, {"j", 38},
+        {"quote", 39}, {"k", 40}, {"semicolon", 41}, {"backslash", 42}, {"comma", 43},
+        {"slash", 44}, {"n", 45}, {"m", 46}, {"period", 47}, {"tab", 48}, {"space", 49},
+        {"grave", 50}, {"delete", 51}, {"escape", 53}, {"esc", 53}, {"command", 55},
+        {"left_command", 55}, {"shift", 56}, {"left_shift", 56}, {"caps_lock", 57},
+        {"option", 58}, {"left_option", 58}, {"alt", 58}, {"control", 59},
+        {"left_control", 59}, {"right_shift", 60}, {"right_option", 61},
+        {"right_alt", 61}, {"right_control", 62}, {"left_arrow", 123},
+        {"right_arrow", 124}, {"down_arrow", 125}, {"up_arrow", 126},
+        {"f1", 122}, {"f2", 120}, {"f3", 99}, {"f4", 118}, {"f5", 96}
+    };
+}
+
+static EmulationMode ModeFromString(NSString* value) {
+    NSString* lower = [[value lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([lower isEqualToString:@"mouse"]) {
+        return MODE_MOUSE;
+    }
+    if ([lower isEqualToString:@"keyboard"]) {
+        return MODE_KEYBOARD;
+    }
+    return MODE_HYBRID;
+}
+
+static NSString* ModeName(EmulationMode mode) {
+    switch (mode) {
+        case MODE_MOUSE:
+            return @"mouse";
+        case MODE_KEYBOARD:
+            return @"keyboard";
+        case MODE_HYBRID:
+        default:
+            return @"hybrid";
+    }
+}
+
+static BindingAction ParseActionString(NSString* actionString, const RuntimeConfig& config) {
+    BindingAction action;
+    if (![actionString isKindOfClass:[NSString class]]) {
+        return action;
+    }
+
+    NSString* trimmed = [actionString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (trimmed.length == 0) {
+        return action;
+    }
+
+    NSArray<NSString*>* parts = [trimmed componentsSeparatedByString:@":"];
+    if (parts.count != 2) {
+        return action;
+    }
+
+    NSString* category = [parts[0] lowercaseString];
+    std::string target = NormalizeKeyName([parts[1] UTF8String]);
+    action.description = [trimmed UTF8String];
+
+    if ([category isEqualToString:@"key"]) {
+        auto keyCodes = KeyCodeMap();
+        auto it = keyCodes.find(target);
+        if (it != keyCodes.end()) {
+            action.kind = BindingActionKindKey;
+            action.keyCode = it->second;
+        }
+        return action;
+    }
+
+    if ([category isEqualToString:@"mouse"]) {
+        if (target == "left") {
+            action.kind = BindingActionKindMouseButton;
+            action.mouseButton = kCGMouseButtonLeft;
+        } else if (target == "right") {
+            action.kind = BindingActionKindMouseButton;
+            action.mouseButton = kCGMouseButtonRight;
+        } else if (target == "middle" || target == "center") {
+            action.kind = BindingActionKindMouseButton;
+            action.mouseButton = kCGMouseButtonCenter;
+        } else if (target == "scroll_up") {
+            action.kind = BindingActionKindScroll;
+            action.scrollY = config.mouse.scrollStep;
+        } else if (target == "scroll_down") {
+            action.kind = BindingActionKindScroll;
+            action.scrollY = -config.mouse.scrollStep;
+        } else if (target == "scroll_left") {
+            action.kind = BindingActionKindScroll;
+            action.scrollX = -config.mouse.scrollStep;
+        } else if (target == "scroll_right") {
+            action.kind = BindingActionKindScroll;
+            action.scrollX = config.mouse.scrollStep;
+        }
+    }
+
+    if ([category isEqualToString:@"system"]) {
+        if (target == "launchpad") {
+            action.kind = BindingActionKindLaunchpad;
+        }
+    }
+
+    return action;
+}
+
+static void LoadBindingsFromDictionary(NSDictionary* dictionary,
+                                       std::map<uint32_t, BindingAction>& target,
+                                       const RuntimeConfig& config,
+                                       NSString* label) {
+    if (![dictionary isKindOfClass:[NSDictionary class]]) {
+        return;
+    }
+
+    target.clear();
+    auto masks = ButtonMaskMap();
+    for (NSString* rawButtonName in dictionary) {
+        id actionValue = dictionary[rawButtonName];
+        std::string buttonName = UpperNoSpaces([rawButtonName UTF8String]);
+        auto maskIt = masks.find(buttonName);
+        if (maskIt == masks.end()) {
+            NSLog(@"Ignoring unknown button binding '%@' in %@", rawButtonName, label);
+            continue;
+        }
+
+        BindingAction action = ParseActionString(actionValue, config);
+        if (action.kind == BindingActionKindNone) {
+            NSLog(@"Ignoring unsupported action '%@' for button '%@' in %@", actionValue, rawButtonName, label);
+            continue;
+        }
+
+        target[maskIt->second] = action;
+    }
+}
+
+@interface Joycon2VirtualHID () {
+@private
+    RuntimeConfig _config;
+    std::map<std::string, DeviceState> _deviceStates;
+}
+- (void)setupKeyboardEventTap;
+- (void)loadConfig;
+- (void)installDefaultBindings;
+- (const BindingAction*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode;
+- (void)switchToMode:(EmulationMode)mode;
+- (void)releaseAllPressedInputs;
+- (void)postKeyboardEventForKeyCode:(CGKeyCode)keyCode down:(BOOL)down;
+- (void)postMouseButton:(CGMouseButton)button down:(BOOL)down;
+- (void)postScrollX:(int32_t)scrollX scrollY:(int32_t)scrollY;
+- (void)openLaunchpad;
+- (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
+- (void)processRightStickMouseFromData:(NSDictionary*)joyconData;
+- (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
+- (void)processLeftStickFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
+@end
+
+CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon);
+
+@implementation Joycon2VirtualHID
+
+@synthesize initialized = _initialized;
+@synthesize emulationMode = _emulationMode;
+
+- (instancetype)initWithMode:(EmulationMode)mode {
+    return [self initWithMode:mode modeOverridden:YES configPath:nil];
+}
+
+- (instancetype)initWithMode:(EmulationMode)mode modeOverridden:(BOOL)modeOverridden configPath:(NSString*)configPath {
+    self = [super init];
+    if (!self) {
+        return nil;
+    }
+
+    _modeOverridden = modeOverridden;
+    _configPath = [configPath copy];
+    self.emulationMode = mode;
+    self.initialized = NO;
+
+#ifndef HID_ENABLE
+    joyconClient = [Joycon2BLEReceiver sharedInstance];
+    if (!joyconClient) {
+        NSLog(@"Failed to get Joy-Con BLE receiver instance");
+        return nil;
+    }
+
+    [self loadConfig];
+    if (!_modeOverridden) {
+        self.emulationMode = _config.defaultMode;
+    }
+
+    __block Joycon2VirtualHID *blockSelf = self;
+    joyconClient.onDataReceived = ^(NSDictionary* data) {
+        [blockSelf sendHIDReportFromJoyconData:data];
+    };
+    joyconClient.onConnected = ^{
+        blockSelf.initialized = NO;
+    };
+    joyconClient.onError = ^(NSString* error) {
+        NSLog(@"Joy-Con error: %@", error);
+    };
+#endif
+
+    NSLog(@"HID event injection ready in mode: %@", ModeName(self.emulationMode));
+    return self;
+}
+
+- (void)dealloc {
+    [self stopEmulation];
+    [_configPath release];
+    [super dealloc];
+}
+
+- (void)loadConfig {
+    _config = RuntimeConfig();
+    [self installDefaultBindings];
+
+    NSString* resolvedPath = _configPath;
+    if (!resolvedPath || resolvedPath.length == 0) {
+        NSString* appSupportDir = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
+        NSString* appSupportConfig = appSupportDir ? [[appSupportDir stringByAppendingPathComponent:@"Joycon2forMac"] stringByAppendingPathComponent:@"joycon2_config.json"] : nil;
+        NSString* currentDirConfig = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:@"joycon2_config.json"];
+        NSString* bundledConfig = [[NSBundle mainBundle] pathForResource:@"joycon2_config" ofType:@"json"];
+
+        if (appSupportConfig && [[NSFileManager defaultManager] fileExistsAtPath:appSupportConfig]) {
+            resolvedPath = appSupportConfig;
+        } else if ([[NSFileManager defaultManager] fileExistsAtPath:currentDirConfig]) {
+            resolvedPath = currentDirConfig;
+        } else {
+            resolvedPath = bundledConfig ?: currentDirConfig;
+        }
+    }
+
+    if (![[NSFileManager defaultManager] fileExistsAtPath:resolvedPath]) {
+        _config.loadedFrom = [resolvedPath UTF8String];
+        NSLog(@"Config file not found at %@, using defaults", resolvedPath);
+        return;
+    }
+
+    NSData* data = [NSData dataWithContentsOfFile:resolvedPath];
+    if (!data) {
+        NSLog(@"Failed to read config at %@, using defaults", resolvedPath);
+        return;
+    }
+
+    NSError* error = nil;
+    id rootObject = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+    if (![rootObject isKindOfClass:[NSDictionary class]]) {
+        NSLog(@"Invalid config JSON at %@: %@", resolvedPath, error.localizedDescription);
+        return;
+    }
+
+    NSDictionary* root = (NSDictionary*)rootObject;
+    _config.loadedFrom = [resolvedPath UTF8String];
+
+    NSString* modeValue = root[@"mode"];
+    if ([modeValue isKindOfClass:[NSString class]]) {
+        _config.defaultMode = ModeFromString(modeValue);
+    }
+
+    NSNumber* enableLeft = root[@"enableLeftJoyCon"];
+    if ([enableLeft isKindOfClass:[NSNumber class]]) {
+        _config.enableLeftJoyCon = [enableLeft boolValue];
+    }
+
+    NSDictionary* mouse = root[@"mouse"];
+    if ([mouse isKindOfClass:[NSDictionary class]]) {
+        NSNumber* sensitivity = mouse[@"sensitivity"];
+        NSNumber* deadzone = mouse[@"deadzone"];
+        NSNumber* smoothing = mouse[@"smoothing"];
+        NSNumber* maxStep = mouse[@"maxStep"];
+        NSNumber* jumpThreshold = mouse[@"jumpThreshold"];
+        NSNumber* calibrationSeconds = mouse[@"calibrationSeconds"];
+        NSNumber* invertX = mouse[@"invertX"];
+        NSNumber* invertY = mouse[@"invertY"];
+        NSNumber* scrollStep = mouse[@"scrollStep"];
+        if ([sensitivity isKindOfClass:[NSNumber class]]) _config.mouse.sensitivity = [sensitivity doubleValue];
+        if ([deadzone isKindOfClass:[NSNumber class]]) _config.mouse.deadzone = [deadzone doubleValue];
+        if ([smoothing isKindOfClass:[NSNumber class]]) _config.mouse.smoothing = [smoothing doubleValue];
+        if ([maxStep isKindOfClass:[NSNumber class]]) _config.mouse.maxStep = [maxStep doubleValue];
+        if ([jumpThreshold isKindOfClass:[NSNumber class]]) _config.mouse.jumpThreshold = [jumpThreshold doubleValue];
+        if ([calibrationSeconds isKindOfClass:[NSNumber class]]) _config.mouse.calibrationSeconds = std::max(0.0, [calibrationSeconds doubleValue]);
+        if ([invertX isKindOfClass:[NSNumber class]]) _config.mouse.invertX = [invertX boolValue];
+        if ([invertY isKindOfClass:[NSNumber class]]) _config.mouse.invertY = [invertY boolValue];
+        if ([scrollStep isKindOfClass:[NSNumber class]]) _config.mouse.scrollStep = std::max(1, [scrollStep intValue]);
+    }
+
+    NSDictionary* keyboard = root[@"keyboard"];
+    if ([keyboard isKindOfClass:[NSDictionary class]]) {
+        NSNumber* stickDeadzone = keyboard[@"stickDeadzone"];
+        NSString* leftStickMode = keyboard[@"leftStickMode"];
+        if ([stickDeadzone isKindOfClass:[NSNumber class]]) _config.keyboard.stickDeadzone = [stickDeadzone doubleValue];
+        if ([leftStickMode isKindOfClass:[NSString class]]) _config.keyboard.leftStickMode = ToLower([leftStickMode UTF8String]);
+    }
+
+    NSDictionary* bindings = root[@"bindings"];
+    if ([bindings isKindOfClass:[NSDictionary class]]) {
+        LoadBindingsFromDictionary(bindings, _config.bindings, _config, @"bindings");
+    }
+
+    NSDictionary* modeBindings = root[@"modeBindings"];
+    if ([modeBindings isKindOfClass:[NSDictionary class]]) {
+        LoadBindingsFromDictionary(modeBindings[@"mouse"], _config.mouseBindings, _config, @"modeBindings.mouse");
+        LoadBindingsFromDictionary(modeBindings[@"keyboard"], _config.keyboardBindings, _config, @"modeBindings.keyboard");
+        LoadBindingsFromDictionary(modeBindings[@"hybrid"], _config.hybridBindings, _config, @"modeBindings.hybrid");
+    }
+
+    NSLog(@"Loaded config from %@ (mode=%@, leftJoyCon=%@)", resolvedPath, ModeName(_config.defaultMode), _config.enableLeftJoyCon ? @"enabled" : @"disabled");
+}
+
+- (void)installDefaultBindings {
+    auto masks = ButtonMaskMap();
+    auto bindAction = [&](std::map<uint32_t, BindingAction>& target, const std::string& button, NSString* actionString) {
+        auto it = masks.find(button);
+        if (it == masks.end()) {
+            return;
+        }
+        BindingAction action = ParseActionString(actionString, _config);
+        if (action.kind != BindingActionKindNone) {
+            target[it->second] = action;
+        }
+    };
+
+    _config.bindings.clear();
+    _config.mouseBindings.clear();
+    _config.keyboardBindings.clear();
+    _config.hybridBindings.clear();
+
+    bindAction(_config.mouseBindings, "A", @"key:space");
+    bindAction(_config.mouseBindings, "R", @"mouse:left");
+    bindAction(_config.mouseBindings, "B", @"key:left_shift");
+    bindAction(_config.mouseBindings, "ZR", @"mouse:right");
+    bindAction(_config.mouseBindings, "X", @"key:e");
+    bindAction(_config.mouseBindings, "Y", @"key:q");
+    bindAction(_config.mouseBindings, "L", @"mouse:scroll_up");
+    bindAction(_config.mouseBindings, "ZL", @"mouse:scroll_down");
+    bindAction(_config.mouseBindings, "UP", @"key:up_arrow");
+    bindAction(_config.mouseBindings, "DOWN", @"key:down_arrow");
+    bindAction(_config.mouseBindings, "LEFT", @"key:left_arrow");
+    bindAction(_config.mouseBindings, "RIGHT", @"key:right_arrow");
+    bindAction(_config.mouseBindings, "SL(R)", @"mouse:scroll_up");
+    bindAction(_config.mouseBindings, "SR(R)", @"mouse:scroll_down");
+    bindAction(_config.mouseBindings, "LS", @"key:left_control");
+    bindAction(_config.mouseBindings, "RS", @"mouse:middle");
+    bindAction(_config.mouseBindings, "SELECT", @"key:t");
+    bindAction(_config.mouseBindings, "START", @"key:escape");
+    bindAction(_config.mouseBindings, "HOME", @"system:launchpad");
+    bindAction(_config.mouseBindings, "CAMERA", @"key:f5");
+    bindAction(_config.mouseBindings, "CHAT", @"key:t");
+
+    bindAction(_config.hybridBindings, "A", @"key:space");
+    bindAction(_config.hybridBindings, "B", @"key:left_shift");
+    bindAction(_config.hybridBindings, "X", @"key:e");
+    bindAction(_config.hybridBindings, "Y", @"key:q");
+    bindAction(_config.hybridBindings, "R", @"mouse:scroll_down");
+    bindAction(_config.hybridBindings, "ZR", @"mouse:right");
+    bindAction(_config.hybridBindings, "L", @"mouse:scroll_up");
+    bindAction(_config.hybridBindings, "ZL", @"mouse:left");
+    bindAction(_config.hybridBindings, "UP", @"key:up_arrow");
+    bindAction(_config.hybridBindings, "DOWN", @"key:down_arrow");
+    bindAction(_config.hybridBindings, "LEFT", @"key:left_arrow");
+    bindAction(_config.hybridBindings, "RIGHT", @"key:right_arrow");
+    bindAction(_config.hybridBindings, "SL(L)", @"mouse:scroll_up");
+    bindAction(_config.hybridBindings, "SR(L)", @"mouse:scroll_down");
+    bindAction(_config.hybridBindings, "SL(R)", @"mouse:scroll_up");
+    bindAction(_config.hybridBindings, "SR(R)", @"mouse:scroll_down");
+    bindAction(_config.hybridBindings, "LS", @"key:left_control");
+    bindAction(_config.hybridBindings, "RS", @"key:left_control");
+    bindAction(_config.hybridBindings, "SELECT", @"key:t");
+    bindAction(_config.hybridBindings, "START", @"key:escape");
+    bindAction(_config.hybridBindings, "HOME", @"system:launchpad");
+    bindAction(_config.hybridBindings, "CAMERA", @"key:f5");
+    bindAction(_config.hybridBindings, "CHAT", @"key:t");
+
+    bindAction(_config.keyboardBindings, "A", @"key:space");
+    bindAction(_config.keyboardBindings, "B", @"key:left_shift");
+    bindAction(_config.keyboardBindings, "X", @"key:e");
+    bindAction(_config.keyboardBindings, "Y", @"key:q");
+    bindAction(_config.keyboardBindings, "R", @"key:return");
+    bindAction(_config.keyboardBindings, "ZR", @"key:left_control");
+    bindAction(_config.keyboardBindings, "L", @"mouse:scroll_up");
+    bindAction(_config.keyboardBindings, "ZL", @"mouse:scroll_down");
+    bindAction(_config.keyboardBindings, "UP", @"key:up_arrow");
+    bindAction(_config.keyboardBindings, "DOWN", @"key:down_arrow");
+    bindAction(_config.keyboardBindings, "LEFT", @"key:left_arrow");
+    bindAction(_config.keyboardBindings, "RIGHT", @"key:right_arrow");
+    bindAction(_config.keyboardBindings, "SL(L)", @"mouse:scroll_up");
+    bindAction(_config.keyboardBindings, "SR(L)", @"mouse:scroll_down");
+    bindAction(_config.keyboardBindings, "SL(R)", @"mouse:scroll_up");
+    bindAction(_config.keyboardBindings, "SR(R)", @"mouse:scroll_down");
+    bindAction(_config.keyboardBindings, "LS", @"key:left_control");
+    bindAction(_config.keyboardBindings, "RS", @"key:return");
+    bindAction(_config.keyboardBindings, "SELECT", @"key:t");
+    bindAction(_config.keyboardBindings, "START", @"key:escape");
+    bindAction(_config.keyboardBindings, "HOME", @"system:launchpad");
+    bindAction(_config.keyboardBindings, "CAMERA", @"key:f5");
+    bindAction(_config.keyboardBindings, "CHAT", @"key:t");
+}
+
+- (void)startEmulation {
+#ifndef HID_ENABLE
+    [joyconClient startScan];
+#endif
+    [self setupKeyboardEventTap];
+    NSLog(@"Started Joy-Con emulation in %@ mode", ModeName(self.emulationMode));
+}
+
+- (void)stopEmulation {
+    [self releaseAllPressedInputs];
+#ifndef HID_ENABLE
+    [joyconClient disconnect];
+#endif
+    if (_eventTap) {
+        CFMachPortInvalidate(_eventTap);
+        CFRelease(_eventTap);
+        _eventTap = NULL;
+    }
+}
+
+CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon) {
+    Joycon2VirtualHID *self = (__bridge Joycon2VirtualHID *)refcon;
+    if (type != kCGEventKeyDown) {
+        return event;
+    }
+
+    CGKeyCode keyCode = (CGKeyCode)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+    CGEventFlags flags = CGEventGetFlags(event);
+    CGEventFlags requiredFlags = kCGEventFlagMaskCommand | kCGEventFlagMaskControl | kCGEventFlagMaskAlternate;
+    if ((flags & requiredFlags) != requiredFlags) {
+        return event;
+    }
+
+    if (keyCode == 46) { // M
+        [self switchToMode:MODE_MOUSE];
+        return NULL;
+    }
+    if (keyCode == 40) { // K
+        [self switchToMode:MODE_KEYBOARD];
+        return NULL;
+    }
+    if (keyCode == 4) { // H
+        [self switchToMode:MODE_HYBRID];
+        return NULL;
+    }
+
+    return event;
+}
+
+- (void)setupKeyboardEventTap {
+    if (_eventTap) {
+        return;
+    }
+
+    CGEventMask eventMask = CGEventMaskBit(kCGEventKeyDown);
+    _eventTap = CGEventTapCreate(kCGSessionEventTap,
+                                 kCGHeadInsertEventTap,
+                                 kCGEventTapOptionDefault,
+                                 eventMask,
+                                 eventTapCallback,
+                                 (__bridge void *)self);
+    if (!_eventTap) {
+        NSLog(@"Failed to create event tap. Grant Accessibility access in System Settings.");
+        return;
+    }
+
+    CFRunLoopSourceRef runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, _eventTap, 0);
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, kCFRunLoopCommonModes);
+    CFRelease(runLoopSource);
+    CGEventTapEnable(_eventTap, true);
+}
+
+- (void)openLaunchpad {
+    [[NSWorkspace sharedWorkspace] launchApplication:@"Launchpad"];
+}
+
+- (const BindingAction*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode {
+    const std::map<uint32_t, BindingAction>* selectedBindings = nullptr;
+    switch (mode) {
+        case MODE_MOUSE:
+            selectedBindings = &_config.mouseBindings;
+            break;
+        case MODE_KEYBOARD:
+            selectedBindings = &_config.keyboardBindings;
+            break;
+        case MODE_HYBRID:
+        default:
+            selectedBindings = &_config.hybridBindings;
+            break;
+    }
+
+    if (selectedBindings) {
+        auto it = selectedBindings->find(mask);
+        if (it != selectedBindings->end()) {
+            return &it->second;
+        }
+    }
+
+    auto fallback = _config.bindings.find(mask);
+    if (fallback != _config.bindings.end()) {
+        return &fallback->second;
+    }
+
+    return nullptr;
+}
+
+- (void)switchToMode:(EmulationMode)mode {
+    if (self.emulationMode == mode) {
+        return;
+    }
+    [self releaseAllPressedInputs];
+    self.emulationMode = mode;
+    NSLog(@"Switched to %@ mode", ModeName(mode));
+}
+
+- (void)releaseAllPressedInputs {
+    BOOL keyboardEnabled = YES;
+    BOOL mouseEnabled = YES;
+    std::set<uint32_t> relevantMasks;
+    for (const auto& entry : _config.bindings) relevantMasks.insert(entry.first);
+    for (const auto& entry : _config.mouseBindings) relevantMasks.insert(entry.first);
+    for (const auto& entry : _config.keyboardBindings) relevantMasks.insert(entry.first);
+    for (const auto& entry : _config.hybridBindings) relevantMasks.insert(entry.first);
+
+    for (auto& entry : _deviceStates) {
+        DeviceState& state = entry.second;
+        for (uint32_t mask : relevantMasks) {
+            const BindingAction* action = [self bindingForMask:mask mode:self.emulationMode];
+            bool isPressed = (state.lastButtons & mask) != 0;
+            if (!isPressed || !action) {
+                continue;
+            }
+
+            if (action->kind == BindingActionKindKey && keyboardEnabled) {
+                [self postKeyboardEventForKeyCode:action->keyCode down:NO];
+            } else if (action->kind == BindingActionKindMouseButton && mouseEnabled) {
+                [self postMouseButton:action->mouseButton down:NO];
+            }
+        }
+
+        if (state.stickUp) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 126 : 13) down:NO];
+        if (state.stickDown) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 125 : 1) down:NO];
+        if (state.stickLeft) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 123 : 0) down:NO];
+        if (state.stickRight) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 124 : 2) down:NO];
+
+        state.lastButtons = 0;
+        state.stickUp = false;
+        state.stickDown = false;
+        state.stickLeft = false;
+        state.stickRight = false;
+    }
+}
+
+- (void)sendHIDReportFromJoyconData:(NSDictionary *)joyconData {
+#ifndef HID_ENABLE
+    NSString* deviceTypeString = joyconData[@"DeviceType"] ?: @"Unknown";
+    NSString* identifier = joyconData[@"PeripheralIdentifier"] ?: @"unknown";
+    std::string deviceType = [deviceTypeString UTF8String];
+
+    if (deviceType == "L" && !_config.enableLeftJoyCon) {
+        return;
+    }
+
+    BOOL mouseEnabled = (self.emulationMode == MODE_MOUSE || self.emulationMode == MODE_HYBRID);
+    BOOL keyboardEnabled = (self.emulationMode == MODE_KEYBOARD || self.emulationMode == MODE_HYBRID);
+
+    DeviceState& state = _deviceStates[[identifier UTF8String]];
+
+    if (mouseEnabled && deviceType == "R") {
+        [self processMouseSensorFromData:joyconData state:state];
+    }
+
+    NSNumber* buttonsNumber = joyconData[@"Buttons"];
+    uint32_t buttons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
+    [self processButtonBindings:buttons state:state keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+
+    if (keyboardEnabled && (deviceType == "L" || deviceType == "Unknown")) {
+        [self processLeftStickFromData:joyconData state:state];
+    }
+#endif
+}
+
+- (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state {
+    if (!CGCursorIsVisible()) {
+        [self processRightStickMouseFromData:joyconData];
+        return;
+    }
+
+    NSNumber* mouseXNumber = joyconData[@"MouseX"];
+    NSNumber* mouseYNumber = joyconData[@"MouseY"];
+    if (!mouseXNumber || !mouseYNumber) {
+        return;
+    }
+
+    int16_t mouseX = (int16_t)[mouseXNumber intValue];
+    int16_t mouseY = (int16_t)[mouseYNumber intValue];
+
+    if (!state.hasMouseSample) {
+        state.lastMouseX = mouseX;
+        state.lastMouseY = mouseY;
+        state.calibrationEndsAt = CFAbsoluteTimeGetCurrent() + _config.mouse.calibrationSeconds;
+        state.hasMouseSample = true;
+        return;
+    }
+
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    double rawDeltaX = (double)(mouseX - state.lastMouseX);
+    double rawDeltaY = (double)(mouseY - state.lastMouseY);
+    state.lastMouseX = mouseX;
+    state.lastMouseY = mouseY;
+
+    if (std::fabs(rawDeltaX) > _config.mouse.jumpThreshold || std::fabs(rawDeltaY) > _config.mouse.jumpThreshold) {
+        state.smoothedDeltaX = 0.0;
+        state.smoothedDeltaY = 0.0;
+        return;
+    }
+
+    if (now < state.calibrationEndsAt) {
+        state.driftBiasX = (state.driftBiasX * 0.8) + (rawDeltaX * 0.2);
+        state.driftBiasY = (state.driftBiasY * 0.8) + (rawDeltaY * 0.2);
+        state.smoothedDeltaX = 0.0;
+        state.smoothedDeltaY = 0.0;
+        return;
+    }
+
+    const double driftWindow = std::max(_config.mouse.deadzone * 3.0, 6.0);
+    if (std::fabs(rawDeltaX) < driftWindow) {
+        state.driftBiasX = (state.driftBiasX * 0.95) + (rawDeltaX * 0.05);
+    }
+    if (std::fabs(rawDeltaY) < driftWindow) {
+        state.driftBiasY = (state.driftBiasY * 0.95) + (rawDeltaY * 0.05);
+    }
+
+    rawDeltaX -= state.driftBiasX;
+    rawDeltaY -= state.driftBiasY;
+
+    if (std::fabs(rawDeltaX) < _config.mouse.deadzone) rawDeltaX = 0.0;
+    if (std::fabs(rawDeltaY) < _config.mouse.deadzone) rawDeltaY = 0.0;
+
+    const double carry = ClampDouble(_config.mouse.smoothing, 0.0, 0.95);
+    state.smoothedDeltaX = (state.smoothedDeltaX * carry) + (rawDeltaX * (1.0 - carry));
+    state.smoothedDeltaY = (state.smoothedDeltaY * carry) + (rawDeltaY * (1.0 - carry));
+
+    if (rawDeltaX == 0.0) {
+        state.smoothedDeltaX *= carry;
+    }
+    if (rawDeltaY == 0.0) {
+        state.smoothedDeltaY *= carry;
+    }
+
+    double deltaX = state.smoothedDeltaX * _config.mouse.sensitivity;
+    double deltaY = state.smoothedDeltaY * _config.mouse.sensitivity;
+    if (_config.mouse.invertX) deltaX = -deltaX;
+    if (_config.mouse.invertY) deltaY = -deltaY;
+
+    if (std::fabs(deltaX) < 0.01 && std::fabs(deltaY) < 0.01) {
+        return;
+    }
+
+    deltaX = ClampDouble(deltaX, -_config.mouse.maxStep, _config.mouse.maxStep);
+    deltaY = ClampDouble(deltaY, -_config.mouse.maxStep, _config.mouse.maxStep);
+
+    CGEventRef tempEvent = CGEventCreate(NULL);
+    CGPoint currentPos = CGEventGetLocation(tempEvent);
+    CFRelease(tempEvent);
+
+    currentPos.x += deltaX;
+    currentPos.y += deltaY;
+
+    CGRect screenBounds = CGDisplayBounds(CGMainDisplayID());
+    currentPos.x = fmax(screenBounds.origin.x, fmin(currentPos.x, screenBounds.origin.x + screenBounds.size.width));
+    currentPos.y = fmax(screenBounds.origin.y, fmin(currentPos.y, screenBounds.origin.y + screenBounds.size.height));
+    CGWarpMouseCursorPosition(currentPos);
+}
+
+- (void)processRightStickMouseFromData:(NSDictionary*)joyconData {
+    NSNumber* rightStickX = joyconData[@"RightStickX"];
+    NSNumber* rightStickY = joyconData[@"RightStickY"];
+    if (!rightStickX || !rightStickY) {
+        return;
+    }
+
+    double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
+    double normalizedY = ([rightStickY doubleValue] - 2047.0) / 2047.0;
+    double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
+
+    if (std::fabs(normalizedX) < deadzone) normalizedX = 0.0;
+    if (std::fabs(normalizedY) < deadzone) normalizedY = 0.0;
+    if (normalizedX == 0.0 && normalizedY == 0.0) {
+        return;
+    }
+
+    double scale = std::max(8.0, _config.mouse.maxStep * 0.7);
+    double deltaX = normalizedX * scale;
+    double deltaY = normalizedY * scale;
+
+    CGEventRef tempEvent = CGEventCreate(NULL);
+    CGPoint currentPos = CGEventGetLocation(tempEvent);
+    CFRelease(tempEvent);
+
+    currentPos.x += deltaX;
+    currentPos.y += deltaY;
+
+    CGRect screenBounds = CGDisplayBounds(CGMainDisplayID());
+    currentPos.x = fmax(screenBounds.origin.x, fmin(currentPos.x, screenBounds.origin.x + screenBounds.size.width));
+    currentPos.y = fmax(screenBounds.origin.y, fmin(currentPos.y, screenBounds.origin.y + screenBounds.size.height));
+    CGWarpMouseCursorPosition(currentPos);
+}
+
+- (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {
+    std::set<uint32_t> relevantMasks;
+    for (const auto& entry : _config.bindings) relevantMasks.insert(entry.first);
+    switch (self.emulationMode) {
+        case MODE_MOUSE:
+            for (const auto& entry : _config.mouseBindings) relevantMasks.insert(entry.first);
+            break;
+        case MODE_KEYBOARD:
+            for (const auto& entry : _config.keyboardBindings) relevantMasks.insert(entry.first);
+            break;
+        case MODE_HYBRID:
+        default:
+            for (const auto& entry : _config.hybridBindings) relevantMasks.insert(entry.first);
+            break;
+    }
+
+    for (uint32_t mask : relevantMasks) {
+        const BindingAction* action = [self bindingForMask:mask mode:self.emulationMode];
+        if (!action) {
+            continue;
+        }
+        bool wasPressed = (state.lastButtons & mask) != 0;
+        bool isPressed = (buttons & mask) != 0;
+        if (wasPressed == isPressed) {
+            continue;
+        }
+
+        if (action->kind == BindingActionKindKey && keyboardEnabled) {
+            [self postKeyboardEventForKeyCode:action->keyCode down:isPressed];
+        } else if (action->kind == BindingActionKindMouseButton && mouseEnabled) {
+            [self postMouseButton:action->mouseButton down:isPressed];
+        } else if (action->kind == BindingActionKindScroll && mouseEnabled && isPressed) {
+            [self postScrollX:action->scrollX scrollY:action->scrollY];
+        } else if (action->kind == BindingActionKindLaunchpad && isPressed) {
+            [self openLaunchpad];
+        }
+    }
+
+    state.lastButtons = buttons;
+}
+
+- (void)processLeftStickFromData:(NSDictionary*)joyconData state:(DeviceState&)state {
+    if (_config.keyboard.leftStickMode == "none") {
+        return;
+    }
+
+    NSNumber* leftStickX = joyconData[@"LeftStickX"];
+    NSNumber* leftStickY = joyconData[@"LeftStickY"];
+    if (!leftStickX || !leftStickY) {
+        return;
+    }
+
+    double normalizedX = ([leftStickX doubleValue] - 2047.0) / 2047.0;
+    double normalizedY = ([leftStickY doubleValue] - 2047.0) / 2047.0;
+    double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
+
+    bool up = normalizedY < -deadzone;
+    bool down = normalizedY > deadzone;
+    bool left = normalizedX < -deadzone;
+    bool right = normalizedX > deadzone;
+
+    CGKeyCode upCode = _config.keyboard.leftStickMode == "arrows" ? 126 : 13;
+    CGKeyCode downCode = _config.keyboard.leftStickMode == "arrows" ? 125 : 1;
+    CGKeyCode leftCode = _config.keyboard.leftStickMode == "arrows" ? 123 : 0;
+    CGKeyCode rightCode = _config.keyboard.leftStickMode == "arrows" ? 124 : 2;
+
+    if (state.stickUp != up) [self postKeyboardEventForKeyCode:upCode down:up];
+    if (state.stickDown != down) [self postKeyboardEventForKeyCode:downCode down:down];
+    if (state.stickLeft != left) [self postKeyboardEventForKeyCode:leftCode down:left];
+    if (state.stickRight != right) [self postKeyboardEventForKeyCode:rightCode down:right];
+
+    state.stickUp = up;
+    state.stickDown = down;
+    state.stickLeft = left;
+    state.stickRight = right;
+}
+
+- (void)postKeyboardEventForKeyCode:(CGKeyCode)keyCode down:(BOOL)down {
+    CGEventRef event = CGEventCreateKeyboardEvent(NULL, keyCode, down);
+    if (!event) {
+        return;
+    }
+    CGEventPost(kCGHIDEventTap, event);
+    CFRelease(event);
+}
+
+- (void)postMouseButton:(CGMouseButton)button down:(BOOL)down {
+    CGEventRef tempEvent = CGEventCreate(NULL);
+    CGPoint currentPos = CGEventGetLocation(tempEvent);
+    CFRelease(tempEvent);
+
+    CGEventType eventType = kCGEventLeftMouseDown;
+    if (button == kCGMouseButtonLeft) {
+        eventType = down ? kCGEventLeftMouseDown : kCGEventLeftMouseUp;
+    } else if (button == kCGMouseButtonRight) {
+        eventType = down ? kCGEventRightMouseDown : kCGEventRightMouseUp;
+    } else {
+        eventType = down ? kCGEventOtherMouseDown : kCGEventOtherMouseUp;
+    }
+
+    CGEventRef clickEvent = CGEventCreateMouseEvent(NULL, eventType, currentPos, button);
+    if (!clickEvent) {
+        return;
+    }
+    CGEventPost(kCGHIDEventTap, clickEvent);
+    CFRelease(clickEvent);
+}
+
+- (void)postScrollX:(int32_t)scrollX scrollY:(int32_t)scrollY {
+    if (scrollX == 0 && scrollY == 0) {
+        return;
+    }
+
+    CGEventRef wheelEvent = CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitLine, 2, scrollY, scrollX);
+    if (!wheelEvent) {
+        return;
+    }
+    CGEventPost(kCGHIDEventTap, wheelEvent);
+    CFRelease(wheelEvent);
+}
+
+@end
