@@ -88,6 +88,7 @@ struct DeviceState {
     CFAbsoluteTime screenshotPressedAt = 0.0;
     bool screenshotHoldTriggered = false;
     std::map<uint32_t, CFAbsoluteTime> buttonPressedAt;
+    std::map<uint32_t, CFAbsoluteTime> lastTapActionAt;
     bool stickUp = false;
     bool stickDown = false;
     bool stickLeft = false;
@@ -542,7 +543,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _config.keyboardBindings.clear();
     _config.hybridBindings.clear();
 
-    bindPress(_config.mouseBindings, "A", @"system:space_click");
+    bindTap(_config.mouseBindings, "A", @"system:space_click");
     bindPress(_config.mouseBindings, "R", @"mouse:left");
     bindTap(_config.mouseBindings, "B", @"system:shift_delete");
     bindPress(_config.mouseBindings, "ZR", @"mouse:right");
@@ -552,13 +553,13 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.mouseBindings, "ZL", @"mouse:scroll_down");
     bindPress(_config.mouseBindings, "UP", @"system:pov");
     bindPress(_config.mouseBindings, "DOWN", @"key:q");
-    bindPress(_config.mouseBindings, "LEFT", @"key:left_arrow");
+    bindTap(_config.mouseBindings, "LEFT", @"key:left_arrow");
     bindPress(_config.mouseBindings, "RIGHT", @"key:t");
     bindPress(_config.mouseBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.mouseBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.mouseBindings, "SL(R)", @"mouse:scroll_up");
     bindPress(_config.mouseBindings, "SR(R)", @"mouse:scroll_down");
-    bindPress(_config.mouseBindings, "LS", @"system:double_w");
+    bindTap(_config.mouseBindings, "LS", @"system:double_w");
     bindPress(_config.mouseBindings, "RS", @"system:pov");
     bindPress(_config.mouseBindings, "SELECT", @"key:escape");
     bindPress(_config.mouseBindings, "START", @"key:escape");
@@ -566,7 +567,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.mouseBindings, "CAMERA", @"system:screenshot");
     bindPress(_config.mouseBindings, "CHAT", @"system:discord");
 
-    bindPress(_config.hybridBindings, "A", @"system:space_click");
+    bindTap(_config.hybridBindings, "A", @"system:space_click");
     bindTap(_config.hybridBindings, "B", @"system:shift_delete");
     bindPress(_config.hybridBindings, "X", @"key:f");
     bindPress(_config.hybridBindings, "Y", @"key:e");
@@ -576,13 +577,13 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.hybridBindings, "ZL", @"mouse:left");
     bindPress(_config.hybridBindings, "UP", @"system:pov");
     bindPress(_config.hybridBindings, "DOWN", @"key:q");
-    bindPress(_config.hybridBindings, "LEFT", @"key:left_arrow");
+    bindTap(_config.hybridBindings, "LEFT", @"key:left_arrow");
     bindPress(_config.hybridBindings, "RIGHT", @"key:t");
     bindPress(_config.hybridBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.hybridBindings, "SL(R)", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "SR(R)", @"mouse:scroll_down");
-    bindPress(_config.hybridBindings, "LS", @"system:double_w");
+    bindTap(_config.hybridBindings, "LS", @"system:double_w");
     bindPress(_config.hybridBindings, "RS", @"system:pov");
     bindPress(_config.hybridBindings, "SELECT", @"key:escape");
     bindPress(_config.hybridBindings, "START", @"key:escape");
@@ -590,7 +591,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.hybridBindings, "CAMERA", @"system:screenshot");
     bindPress(_config.hybridBindings, "CHAT", @"system:discord");
 
-    bindPress(_config.keyboardBindings, "A", @"system:space_click");
+    bindTap(_config.keyboardBindings, "A", @"system:space_click");
     bindTap(_config.keyboardBindings, "B", @"system:shift_delete");
     bindPress(_config.keyboardBindings, "X", @"key:f");
     bindPress(_config.keyboardBindings, "Y", @"key:e");
@@ -600,13 +601,13 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.keyboardBindings, "ZL", @"mouse:scroll_down");
     bindPress(_config.keyboardBindings, "UP", @"system:pov");
     bindPress(_config.keyboardBindings, "DOWN", @"key:q");
-    bindPress(_config.keyboardBindings, "LEFT", @"key:left_arrow");
+    bindTap(_config.keyboardBindings, "LEFT", @"key:left_arrow");
     bindPress(_config.keyboardBindings, "RIGHT", @"key:t");
     bindPress(_config.keyboardBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.keyboardBindings, "SL(R)", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "SR(R)", @"mouse:scroll_down");
-    bindPress(_config.keyboardBindings, "LS", @"system:double_w");
+    bindTap(_config.keyboardBindings, "LS", @"system:double_w");
     bindPress(_config.keyboardBindings, "RS", @"system:pov");
     bindPress(_config.keyboardBindings, "SELECT", @"key:escape");
     bindPress(_config.keyboardBindings, "START", @"key:escape");
@@ -1253,7 +1254,12 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             bool shouldTap = (binding->tapAction.kind != BindingActionKindNone) &&
                              (binding->pressAction.kind == BindingActionKindNone || duration <= tapThreshold);
             if (shouldTap) {
-                [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+                auto lastTapIt = state.lastTapActionAt.find(mask);
+                double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
+                if (elapsedSinceLastTap >= 0.12) {
+                    [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+                    state.lastTapActionAt[mask] = now;
+                }
             }
             state.buttonPressedAt.erase(mask);
         }

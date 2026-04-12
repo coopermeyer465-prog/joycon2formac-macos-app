@@ -20,7 +20,9 @@
   "bindings": {},
   "modeBindings": {
     "mouse": {
-      "A": "system:space_click",
+      "A": {
+        "tap": "system:space_click"
+      },
       "B": {
         "tap": "system:shift_delete"
       },
@@ -32,13 +34,17 @@
       "ZL": "mouse:scroll_down",
       "UP": "system:pov",
       "DOWN": "key:q",
-      "LEFT": "key:left_arrow",
+      "LEFT": {
+        "tap": "key:left_arrow"
+      },
       "RIGHT": "key:t",
       "SL(L)": "mouse:scroll_up",
       "SR(L)": "mouse:scroll_down",
       "SL(R)": "mouse:scroll_up",
       "SR(R)": "mouse:scroll_down",
-      "LS": "system:double_w",
+      "LS": {
+        "tap": "system:double_w"
+      },
       "RS": "system:pov",
       "SELECT": "key:escape",
       "START": "key:escape",
@@ -47,7 +53,9 @@
       "CHAT": "system:discord"
     },
     "hybrid": {
-      "A": "system:space_click",
+      "A": {
+        "tap": "system:space_click"
+      },
       "B": {
         "tap": "system:shift_delete"
       },
@@ -59,13 +67,17 @@
       "ZL": "mouse:left",
       "UP": "system:pov",
       "DOWN": "key:q",
-      "LEFT": "key:left_arrow",
+      "LEFT": {
+        "tap": "key:left_arrow"
+      },
       "RIGHT": "key:t",
       "SL(L)": "mouse:scroll_up",
       "SR(L)": "mouse:scroll_down",
       "SL(R)": "mouse:scroll_up",
       "SR(R)": "mouse:scroll_down",
-      "LS": "system:double_w",
+      "LS": {
+        "tap": "system:double_w"
+      },
       "RS": "system:pov",
       "SELECT": "key:escape",
       "START": "key:escape",
@@ -74,7 +86,9 @@
       "CHAT": "system:discord"
     },
     "keyboard": {
-      "A": "system:space_click",
+      "A": {
+        "tap": "system:space_click"
+      },
       "B": {
         "tap": "system:shift_delete"
       },
@@ -84,9 +98,13 @@
       "Y": "key:e",
       "UP": "system:pov",
       "DOWN": "key:q",
-      "LEFT": "key:left_arrow",
+      "LEFT": {
+        "tap": "key:left_arrow"
+      },
       "RIGHT": "key:t",
-      "LS": "system:double_w",
+      "LS": {
+        "tap": "system:double_w"
+      },
       "RS": "system:pov",
       "SELECT": "key:escape",
       "START": "key:escape",

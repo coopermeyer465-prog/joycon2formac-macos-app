@@ -151,6 +151,8 @@ The app synthesizes keyboard and mouse events, so macOS may require:
 - `Accessibility`
 - `Input Monitoring` in some setups
 
+Without `Accessibility`, most controller buttons, left-stick keyboard output, mode switching, and injected mouse clicks will appear to do nothing even if BLE connection is working.
+
 If mode switching or injected mouse/keyboard events do not work:
 
 1. Open `System Settings -> Privacy & Security -> Accessibility`
