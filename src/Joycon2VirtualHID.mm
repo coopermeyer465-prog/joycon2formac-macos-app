@@ -2,6 +2,8 @@
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <Foundation/Foundation.h>
+#import <IOKit/hidsystem/ev_keymap.h>
+#import <IOKit/hidsystem/IOLLEvent.h>
 
 #include <algorithm>
 #include <cmath>
@@ -85,6 +87,8 @@ struct DeviceState {
     double smoothedDeltaY = 0.0;
     double driftBiasX = 0.0;
     double driftBiasY = 0.0;
+    double smoothedRightStickX = 0.0;
+    double smoothedRightStickY = 0.0;
     CFAbsoluteTime calibrationEndsAt = 0.0;
     CFAbsoluteTime screenshotPressedAt = 0.0;
     bool screenshotHoldTriggered = false;
@@ -349,6 +353,7 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)postMouseButton:(CGMouseButton)button down:(BOOL)down;
 - (void)postScrollX:(int32_t)scrollX scrollY:(int32_t)scrollY;
 - (void)postEventToAllTaps:(CGEventRef)event;
+- (void)postSystemKey:(int64_t)key down:(BOOL)down;
 - (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY;
 - (void)openLaunchpad;
 - (void)openURLString:(const std::string&)urlString;
@@ -361,7 +366,7 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (BOOL)isScreenRecordingActive;
 - (void)showCapturePreviewForPath:(NSString*)path;
 - (void)hideCapturePreview:(NSTimer*)timer;
-- (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData;
+- (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
 - (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
 - (void)performPressAction:(const BindingAction&)action down:(BOOL)down keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
 - (void)performTapAction:(const BindingAction&)action keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
@@ -771,19 +776,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 }
 
 - (void)openLaunchpad {
-    NSTask* task = [[NSTask alloc] init];
-    task.launchPath = @"/usr/bin/open";
-    task.arguments = @[@"-a", @"Launchpad"];
-    [task launch];
-    [task waitUntilExit];
-    int status = task.terminationStatus;
-    [task release];
-    if (status != 0) {
-        NSURL* launchpadURL = [NSURL fileURLWithPath:@"/System/Applications/Launchpad.app"];
-        if (launchpadURL) {
-            [[NSWorkspace sharedWorkspace] openURL:launchpadURL];
-        }
-    }
+    [self postSystemKey:NX_KEYTYPE_LAUNCH_PANEL down:YES];
+    usleep(10000);
+    [self postSystemKey:NX_KEYTYPE_LAUNCH_PANEL down:NO];
 }
 
 - (void)postEventToAllTaps:(CGEventRef)event {
@@ -795,6 +790,23 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (copy) {
         CGEventPost(kCGSessionEventTap, copy);
         CFRelease(copy);
+    }
+}
+
+- (void)postSystemKey:(int64_t)key down:(BOOL)down {
+    NSInteger state = down ? NX_KEYDOWN : NX_KEYUP;
+    NSInteger data1 = (key << 16) | (state << 8);
+    NSEvent* event = [NSEvent otherEventWithType:NSEventTypeSystemDefined
+                                        location:NSZeroPoint
+                                   modifierFlags:0
+                                       timestamp:0
+                                    windowNumber:0
+                                         context:nil
+                                         subtype:NX_SUBTYPE_AUX_CONTROL_BUTTONS
+                                           data1:(int32_t)data1
+                                           data2:-1];
+    if (event) {
+        [self postEventToAllTaps:[event CGEvent]];
     }
 }
 
@@ -1078,6 +1090,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         state.stickDown = false;
         state.stickLeft = false;
         state.stickRight = false;
+        state.smoothedRightStickX = 0.0;
+        state.smoothedRightStickY = 0.0;
     }
 
     _leftMouseHeld = NO;
@@ -1114,7 +1128,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         const uint32_t mousePrimaryMask = 0x00004000;
         NSNumber* triggerRNumber = joyconData[@"TriggerR"];
         int triggerRValue = triggerRNumber ? [triggerRNumber intValue] : 0;
-        bool shoulderFallbackPressed = triggerRValue > 20 && (buttons & 0x00008000) == 0;
+        bool shoulderFallbackPressed = triggerRValue > 0 && (buttons & 0x00008000) == 0;
         bool primaryPressed = (buttons & mousePrimaryMask) != 0 || shoulderFallbackPressed;
         if (primaryPressed != state.mouseModePrimaryPressed) {
             [self postMouseButton:kCGMouseButtonLeft down:primaryPressed];
@@ -1133,7 +1147,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 - (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state {
     NSNumber* mouseXNumber = joyconData[@"MouseX"];
     NSNumber* mouseYNumber = joyconData[@"MouseY"];
-    BOOL rightStickMoved = [self processRightStickMouseFromData:joyconData];
+    BOOL rightStickMoved = [self processRightStickMouseFromData:joyconData state:state];
     if (!mouseXNumber || !mouseYNumber) {
         return;
     }
@@ -1225,7 +1239,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     [self moveCursorByDeltaX:deltaX deltaY:deltaY];
 }
 
-- (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData {
+- (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData state:(DeviceState&)state {
     NSNumber* rightStickX = joyconData[@"RightStickX"];
     NSNumber* rightStickY = joyconData[@"RightStickY"];
     if (!rightStickX || !rightStickY) {
@@ -1238,6 +1252,19 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     if (std::fabs(normalizedX) < deadzone) normalizedX = 0.0;
     if (std::fabs(normalizedY) < deadzone) normalizedY = 0.0;
+
+    const double stickCarry = 0.82;
+    state.smoothedRightStickX = (state.smoothedRightStickX * stickCarry) + (normalizedX * (1.0 - stickCarry));
+    state.smoothedRightStickY = (state.smoothedRightStickY * stickCarry) + (normalizedY * (1.0 - stickCarry));
+    if (normalizedX == 0.0) {
+        state.smoothedRightStickX *= 0.7;
+    }
+    if (normalizedY == 0.0) {
+        state.smoothedRightStickY *= 0.7;
+    }
+
+    normalizedX = state.smoothedRightStickX;
+    normalizedY = state.smoothedRightStickY;
     if (normalizedX == 0.0 && normalizedY == 0.0) {
         return NO;
     }
