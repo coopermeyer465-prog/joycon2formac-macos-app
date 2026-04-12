@@ -16,7 +16,8 @@ typedef NS_ENUM(NSInteger, BindingActionKind) {
     BindingActionKindMouseButton,
     BindingActionKindScroll,
     BindingActionKindLaunchpad,
-    BindingActionKindScreenshot
+    BindingActionKindScreenshot,
+    BindingActionKindOpenURL
 };
 
 struct MouseConfig {
@@ -42,7 +43,13 @@ struct BindingAction {
     CGMouseButton mouseButton = kCGMouseButtonLeft;
     int scrollX = 0;
     int scrollY = 0;
+    std::string url;
     std::string description;
+};
+
+struct ButtonBinding {
+    BindingAction pressAction;
+    BindingAction tapAction;
 };
 
 struct RuntimeConfig {
@@ -50,10 +57,10 @@ struct RuntimeConfig {
     bool enableLeftJoyCon = true;
     MouseConfig mouse;
     KeyboardConfig keyboard;
-    std::map<uint32_t, BindingAction> bindings;
-    std::map<uint32_t, BindingAction> mouseBindings;
-    std::map<uint32_t, BindingAction> keyboardBindings;
-    std::map<uint32_t, BindingAction> hybridBindings;
+    std::map<uint32_t, ButtonBinding> bindings;
+    std::map<uint32_t, ButtonBinding> mouseBindings;
+    std::map<uint32_t, ButtonBinding> keyboardBindings;
+    std::map<uint32_t, ButtonBinding> hybridBindings;
     std::string loadedFrom;
 };
 
@@ -69,6 +76,7 @@ struct DeviceState {
     CFAbsoluteTime calibrationEndsAt = 0.0;
     CFAbsoluteTime screenshotPressedAt = 0.0;
     bool screenshotHoldTriggered = false;
+    std::map<uint32_t, CFAbsoluteTime> buttonPressedAt;
     bool stickUp = false;
     bool stickDown = false;
     bool stickLeft = false;
@@ -228,14 +236,40 @@ static BindingAction ParseActionString(NSString* actionString, const RuntimeConf
             action.kind = BindingActionKindLaunchpad;
         } else if (target == "screenshot") {
             action.kind = BindingActionKindScreenshot;
+        } else if (target == "discord") {
+            action.kind = BindingActionKindOpenURL;
+            action.url = "https://discord.com/app";
         }
     }
 
     return action;
 }
 
+static ButtonBinding ParseBindingValue(id value, const RuntimeConfig& config) {
+    ButtonBinding binding;
+    if ([value isKindOfClass:[NSString class]]) {
+        binding.pressAction = ParseActionString(value, config);
+        return binding;
+    }
+
+    if (![value isKindOfClass:[NSDictionary class]]) {
+        return binding;
+    }
+
+    NSDictionary* dictionary = (NSDictionary*)value;
+    id pressValue = dictionary[@"press"] ?: dictionary[@"hold"];
+    id tapValue = dictionary[@"tap"] ?: dictionary[@"click"];
+    if ([pressValue isKindOfClass:[NSString class]]) {
+        binding.pressAction = ParseActionString(pressValue, config);
+    }
+    if ([tapValue isKindOfClass:[NSString class]]) {
+        binding.tapAction = ParseActionString(tapValue, config);
+    }
+    return binding;
+}
+
 static void LoadBindingsFromDictionary(NSDictionary* dictionary,
-                                       std::map<uint32_t, BindingAction>& target,
+                                       std::map<uint32_t, ButtonBinding>& target,
                                        const RuntimeConfig& config,
                                        NSString* label) {
     if (![dictionary isKindOfClass:[NSDictionary class]]) {
@@ -253,13 +287,13 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
             continue;
         }
 
-        BindingAction action = ParseActionString(actionValue, config);
-        if (action.kind == BindingActionKindNone) {
+        ButtonBinding binding = ParseBindingValue(actionValue, config);
+        if (binding.pressAction.kind == BindingActionKindNone && binding.tapAction.kind == BindingActionKindNone) {
             NSLog(@"Ignoring unsupported action '%@' for button '%@' in %@", actionValue, rawButtonName, label);
             continue;
         }
 
-        target[maskIt->second] = action;
+        target[maskIt->second] = binding;
     }
 }
 
@@ -273,13 +307,15 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)setupKeyboardEventTap;
 - (void)loadConfig;
 - (void)installDefaultBindings;
-- (const BindingAction*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode;
+- (const ButtonBinding*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode;
 - (void)switchToMode:(EmulationMode)mode;
 - (void)releaseAllPressedInputs;
 - (void)postKeyboardEventForKeyCode:(CGKeyCode)keyCode down:(BOOL)down;
 - (void)postMouseButton:(CGMouseButton)button down:(BOOL)down;
 - (void)postScrollX:(int32_t)scrollX scrollY:(int32_t)scrollY;
+- (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY;
 - (void)openLaunchpad;
+- (void)openURLString:(const std::string&)urlString;
 - (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension;
 - (void)takeScreenshot;
 - (void)startScreenRecording;
@@ -287,6 +323,8 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (BOOL)isScreenRecordingActive;
 - (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData;
 - (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
+- (void)performPressAction:(const BindingAction&)action down:(BOOL)down keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
+- (void)performTapAction:(const BindingAction&)action keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
 - (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
 - (void)processLeftStickFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
 @end
@@ -358,7 +396,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     NSString* resolvedPath = _configPath;
     if (!resolvedPath || resolvedPath.length == 0) {
         NSString* appSupportDir = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-        NSString* appSupportConfig = appSupportDir ? [[appSupportDir stringByAppendingPathComponent:@"Joycon2forMac"] stringByAppendingPathComponent:@"joycon2_config.json"] : nil;
+        NSString* appSupportConfig = appSupportDir ? [[appSupportDir stringByAppendingPathComponent:@"JoyCon2forMac"] stringByAppendingPathComponent:@"joycon2_config.json"] : nil;
         NSString* currentDirConfig = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:@"joycon2_config.json"];
         NSString* bundledConfig = [[NSBundle mainBundle] pathForResource:@"joycon2_config" ofType:@"json"];
 
@@ -450,14 +488,24 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
 - (void)installDefaultBindings {
     auto masks = ButtonMaskMap();
-    auto bindAction = [&](std::map<uint32_t, BindingAction>& target, const std::string& button, NSString* actionString) {
+    auto bindPress = [&](std::map<uint32_t, ButtonBinding>& target, const std::string& button, NSString* actionString) {
         auto it = masks.find(button);
         if (it == masks.end()) {
             return;
         }
         BindingAction action = ParseActionString(actionString, _config);
         if (action.kind != BindingActionKindNone) {
-            target[it->second] = action;
+            target[it->second].pressAction = action;
+        }
+    };
+    auto bindTap = [&](std::map<uint32_t, ButtonBinding>& target, const std::string& button, NSString* actionString) {
+        auto it = masks.find(button);
+        if (it == masks.end()) {
+            return;
+        }
+        BindingAction action = ParseActionString(actionString, _config);
+        if (action.kind != BindingActionKindNone) {
+            target[it->second].tapAction = action;
         }
     };
 
@@ -466,75 +514,80 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _config.keyboardBindings.clear();
     _config.hybridBindings.clear();
 
-    bindAction(_config.mouseBindings, "A", @"key:space");
-    bindAction(_config.mouseBindings, "R", @"mouse:left");
-    bindAction(_config.mouseBindings, "B", @"key:left_shift");
-    bindAction(_config.mouseBindings, "ZR", @"mouse:right");
-    bindAction(_config.mouseBindings, "X", @"key:e");
-    bindAction(_config.mouseBindings, "Y", @"key:q");
-    bindAction(_config.mouseBindings, "L", @"mouse:scroll_up");
-    bindAction(_config.mouseBindings, "ZL", @"mouse:scroll_down");
-    bindAction(_config.mouseBindings, "UP", @"mouse:middle");
-    bindAction(_config.mouseBindings, "DOWN", @"key:q");
-    bindAction(_config.mouseBindings, "LEFT", @"mouse:scroll_up");
-    bindAction(_config.mouseBindings, "RIGHT", @"mouse:scroll_down");
-    bindAction(_config.mouseBindings, "SL(R)", @"mouse:scroll_up");
-    bindAction(_config.mouseBindings, "SR(R)", @"mouse:scroll_down");
-    bindAction(_config.mouseBindings, "LS", @"key:left_control");
-    bindAction(_config.mouseBindings, "RS", @"mouse:middle");
-    bindAction(_config.mouseBindings, "SELECT", @"key:t");
-    bindAction(_config.mouseBindings, "START", @"key:escape");
-    bindAction(_config.mouseBindings, "HOME", @"system:launchpad");
-    bindAction(_config.mouseBindings, "CAMERA", @"system:screenshot");
-    bindAction(_config.mouseBindings, "CHAT", @"key:t");
+    bindPress(_config.mouseBindings, "A", @"key:space");
+    bindPress(_config.mouseBindings, "R", @"mouse:left");
+    bindPress(_config.mouseBindings, "B", @"key:left_shift");
+    bindTap(_config.mouseBindings, "B", @"key:delete");
+    bindPress(_config.mouseBindings, "ZR", @"mouse:right");
+    bindPress(_config.mouseBindings, "X", @"key:f");
+    bindPress(_config.mouseBindings, "Y", @"key:e");
+    bindPress(_config.mouseBindings, "L", @"mouse:scroll_up");
+    bindPress(_config.mouseBindings, "ZL", @"mouse:scroll_down");
+    bindPress(_config.mouseBindings, "UP", @"key:f5");
+    bindPress(_config.mouseBindings, "DOWN", @"key:q");
+    bindPress(_config.mouseBindings, "LEFT", @"key:g");
+    bindPress(_config.mouseBindings, "RIGHT", @"key:t");
+    bindPress(_config.mouseBindings, "SL(L)", @"mouse:scroll_up");
+    bindPress(_config.mouseBindings, "SR(L)", @"mouse:scroll_down");
+    bindPress(_config.mouseBindings, "SL(R)", @"mouse:scroll_up");
+    bindPress(_config.mouseBindings, "SR(R)", @"mouse:scroll_down");
+    bindPress(_config.mouseBindings, "LS", @"key:left_control");
+    bindPress(_config.mouseBindings, "RS", @"mouse:middle");
+    bindPress(_config.mouseBindings, "SELECT", @"key:escape");
+    bindPress(_config.mouseBindings, "START", @"key:escape");
+    bindPress(_config.mouseBindings, "HOME", @"system:launchpad");
+    bindPress(_config.mouseBindings, "CAMERA", @"system:screenshot");
+    bindPress(_config.mouseBindings, "CHAT", @"system:discord");
 
-    bindAction(_config.hybridBindings, "A", @"key:space");
-    bindAction(_config.hybridBindings, "B", @"key:left_shift");
-    bindAction(_config.hybridBindings, "X", @"key:e");
-    bindAction(_config.hybridBindings, "Y", @"key:q");
-    bindAction(_config.hybridBindings, "R", @"mouse:scroll_down");
-    bindAction(_config.hybridBindings, "ZR", @"mouse:right");
-    bindAction(_config.hybridBindings, "L", @"mouse:scroll_up");
-    bindAction(_config.hybridBindings, "ZL", @"mouse:left");
-    bindAction(_config.hybridBindings, "UP", @"mouse:middle");
-    bindAction(_config.hybridBindings, "DOWN", @"key:q");
-    bindAction(_config.hybridBindings, "LEFT", @"mouse:scroll_up");
-    bindAction(_config.hybridBindings, "RIGHT", @"mouse:scroll_down");
-    bindAction(_config.hybridBindings, "SL(L)", @"mouse:scroll_up");
-    bindAction(_config.hybridBindings, "SR(L)", @"mouse:scroll_down");
-    bindAction(_config.hybridBindings, "SL(R)", @"mouse:scroll_up");
-    bindAction(_config.hybridBindings, "SR(R)", @"mouse:scroll_down");
-    bindAction(_config.hybridBindings, "LS", @"key:left_control");
-    bindAction(_config.hybridBindings, "RS", @"key:left_control");
-    bindAction(_config.hybridBindings, "SELECT", @"key:t");
-    bindAction(_config.hybridBindings, "START", @"key:escape");
-    bindAction(_config.hybridBindings, "HOME", @"system:launchpad");
-    bindAction(_config.hybridBindings, "CAMERA", @"system:screenshot");
-    bindAction(_config.hybridBindings, "CHAT", @"key:t");
+    bindPress(_config.hybridBindings, "A", @"key:space");
+    bindPress(_config.hybridBindings, "B", @"key:left_shift");
+    bindTap(_config.hybridBindings, "B", @"key:delete");
+    bindPress(_config.hybridBindings, "X", @"key:f");
+    bindPress(_config.hybridBindings, "Y", @"key:e");
+    bindPress(_config.hybridBindings, "R", @"mouse:scroll_down");
+    bindPress(_config.hybridBindings, "ZR", @"mouse:right");
+    bindPress(_config.hybridBindings, "L", @"mouse:scroll_up");
+    bindPress(_config.hybridBindings, "ZL", @"mouse:left");
+    bindPress(_config.hybridBindings, "UP", @"key:f5");
+    bindPress(_config.hybridBindings, "DOWN", @"key:q");
+    bindPress(_config.hybridBindings, "LEFT", @"key:g");
+    bindPress(_config.hybridBindings, "RIGHT", @"key:t");
+    bindPress(_config.hybridBindings, "SL(L)", @"mouse:scroll_up");
+    bindPress(_config.hybridBindings, "SR(L)", @"mouse:scroll_down");
+    bindPress(_config.hybridBindings, "SL(R)", @"mouse:scroll_up");
+    bindPress(_config.hybridBindings, "SR(R)", @"mouse:scroll_down");
+    bindPress(_config.hybridBindings, "LS", @"key:left_control");
+    bindPress(_config.hybridBindings, "RS", @"key:left_control");
+    bindPress(_config.hybridBindings, "SELECT", @"key:escape");
+    bindPress(_config.hybridBindings, "START", @"key:escape");
+    bindPress(_config.hybridBindings, "HOME", @"system:launchpad");
+    bindPress(_config.hybridBindings, "CAMERA", @"system:screenshot");
+    bindPress(_config.hybridBindings, "CHAT", @"system:discord");
 
-    bindAction(_config.keyboardBindings, "A", @"key:space");
-    bindAction(_config.keyboardBindings, "B", @"key:left_shift");
-    bindAction(_config.keyboardBindings, "X", @"key:e");
-    bindAction(_config.keyboardBindings, "Y", @"key:q");
-    bindAction(_config.keyboardBindings, "R", @"key:return");
-    bindAction(_config.keyboardBindings, "ZR", @"key:left_control");
-    bindAction(_config.keyboardBindings, "L", @"mouse:scroll_up");
-    bindAction(_config.keyboardBindings, "ZL", @"mouse:scroll_down");
-    bindAction(_config.keyboardBindings, "UP", @"mouse:middle");
-    bindAction(_config.keyboardBindings, "DOWN", @"key:q");
-    bindAction(_config.keyboardBindings, "LEFT", @"mouse:scroll_up");
-    bindAction(_config.keyboardBindings, "RIGHT", @"mouse:scroll_down");
-    bindAction(_config.keyboardBindings, "SL(L)", @"mouse:scroll_up");
-    bindAction(_config.keyboardBindings, "SR(L)", @"mouse:scroll_down");
-    bindAction(_config.keyboardBindings, "SL(R)", @"mouse:scroll_up");
-    bindAction(_config.keyboardBindings, "SR(R)", @"mouse:scroll_down");
-    bindAction(_config.keyboardBindings, "LS", @"key:left_control");
-    bindAction(_config.keyboardBindings, "RS", @"key:return");
-    bindAction(_config.keyboardBindings, "SELECT", @"key:t");
-    bindAction(_config.keyboardBindings, "START", @"key:escape");
-    bindAction(_config.keyboardBindings, "HOME", @"system:launchpad");
-    bindAction(_config.keyboardBindings, "CAMERA", @"system:screenshot");
-    bindAction(_config.keyboardBindings, "CHAT", @"key:t");
+    bindPress(_config.keyboardBindings, "A", @"key:space");
+    bindPress(_config.keyboardBindings, "B", @"key:left_shift");
+    bindTap(_config.keyboardBindings, "B", @"key:delete");
+    bindPress(_config.keyboardBindings, "X", @"key:f");
+    bindPress(_config.keyboardBindings, "Y", @"key:e");
+    bindPress(_config.keyboardBindings, "R", @"key:return");
+    bindPress(_config.keyboardBindings, "ZR", @"key:left_control");
+    bindPress(_config.keyboardBindings, "L", @"mouse:scroll_up");
+    bindPress(_config.keyboardBindings, "ZL", @"mouse:scroll_down");
+    bindPress(_config.keyboardBindings, "UP", @"key:f5");
+    bindPress(_config.keyboardBindings, "DOWN", @"key:q");
+    bindPress(_config.keyboardBindings, "LEFT", @"key:g");
+    bindPress(_config.keyboardBindings, "RIGHT", @"key:t");
+    bindPress(_config.keyboardBindings, "SL(L)", @"mouse:scroll_up");
+    bindPress(_config.keyboardBindings, "SR(L)", @"mouse:scroll_down");
+    bindPress(_config.keyboardBindings, "SL(R)", @"mouse:scroll_up");
+    bindPress(_config.keyboardBindings, "SR(R)", @"mouse:scroll_down");
+    bindPress(_config.keyboardBindings, "LS", @"key:left_control");
+    bindPress(_config.keyboardBindings, "RS", @"key:return");
+    bindPress(_config.keyboardBindings, "SELECT", @"key:escape");
+    bindPress(_config.keyboardBindings, "START", @"key:escape");
+    bindPress(_config.keyboardBindings, "HOME", @"system:launchpad");
+    bindPress(_config.keyboardBindings, "CAMERA", @"system:screenshot");
+    bindPress(_config.keyboardBindings, "CHAT", @"system:discord");
 }
 
 - (void)startEmulation {
@@ -609,17 +662,43 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     CGEventTapEnable(_eventTap, true);
 }
 
-- (void)openLaunchpad {
-    NSTask* task = [[NSTask alloc] init];
-    task.launchPath = @"/usr/bin/open";
-    task.arguments = @[@"-a", @"Launchpad"];
-    @try {
-        [task launch];
-        [task waitUntilExit];
-    } @catch (NSException* exception) {
-        NSLog(@"Failed to open Launchpad: %@", exception.reason);
+- (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY {
+    CGEventRef tempEvent = CGEventCreate(NULL);
+    CGPoint currentPos = CGEventGetLocation(tempEvent);
+    CFRelease(tempEvent);
+
+    CGPoint nextPos = currentPos;
+    nextPos.x += deltaX;
+    nextPos.y += deltaY;
+
+    CGRect screenBounds = CGDisplayBounds(CGMainDisplayID());
+    nextPos.x = fmax(screenBounds.origin.x, fmin(nextPos.x, screenBounds.origin.x + screenBounds.size.width));
+    nextPos.y = fmax(screenBounds.origin.y, fmin(nextPos.y, screenBounds.origin.y + screenBounds.size.height));
+
+    CGEventRef moveEvent = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, nextPos, kCGMouseButtonLeft);
+    if (moveEvent) {
+        CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
+        CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
+        CGEventPost(kCGHIDEventTap, moveEvent);
+        CFRelease(moveEvent);
     }
-    [task release];
+    CGWarpMouseCursorPosition(nextPos);
+}
+
+- (void)openLaunchpad {
+    [self postKeyboardEventForKeyCode:118 down:YES];
+    [self postKeyboardEventForKeyCode:118 down:NO];
+}
+
+- (void)openURLString:(const std::string&)urlString {
+    if (urlString.empty()) {
+        return;
+    }
+    NSString* url = [NSString stringWithUTF8String:urlString.c_str()];
+    NSURL* targetURL = [NSURL URLWithString:url];
+    if (targetURL) {
+        [[NSWorkspace sharedWorkspace] openURL:targetURL];
+    }
 }
 
 - (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension {
@@ -671,8 +750,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _screenRecordingTask = nil;
 }
 
-- (const BindingAction*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode {
-    const std::map<uint32_t, BindingAction>* selectedBindings = nullptr;
+- (const ButtonBinding*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode {
+    const std::map<uint32_t, ButtonBinding>* selectedBindings = nullptr;
     switch (mode) {
         case MODE_MOUSE:
             selectedBindings = &_config.mouseBindings;
@@ -722,16 +801,17 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     for (auto& entry : _deviceStates) {
         DeviceState& state = entry.second;
         for (uint32_t mask : relevantMasks) {
-            const BindingAction* action = [self bindingForMask:mask mode:self.emulationMode];
+            const ButtonBinding* binding = [self bindingForMask:mask mode:self.emulationMode];
             bool isPressed = (state.lastButtons & mask) != 0;
-            if (!isPressed || !action) {
+            if (!isPressed || !binding) {
                 continue;
             }
 
-            if (action->kind == BindingActionKindKey && keyboardEnabled) {
-                [self postKeyboardEventForKeyCode:action->keyCode down:NO];
-            } else if (action->kind == BindingActionKindMouseButton && mouseEnabled) {
-                [self postMouseButton:action->mouseButton down:NO];
+            const BindingAction& action = binding->pressAction;
+            if (action.kind == BindingActionKindKey && keyboardEnabled) {
+                [self postKeyboardEventForKeyCode:action.keyCode down:NO];
+            } else if (action.kind == BindingActionKindMouseButton && mouseEnabled) {
+                [self postMouseButton:action.mouseButton down:NO];
             }
         }
 
@@ -741,6 +821,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         if (state.stickRight) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 124 : 2) down:NO];
 
         state.lastButtons = 0;
+        state.buttonPressedAt.clear();
         state.stickUp = false;
         state.stickDown = false;
         state.stickLeft = false;
@@ -865,17 +946,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     deltaX = ClampDouble(deltaX, -_config.mouse.maxStep, _config.mouse.maxStep);
     deltaY = ClampDouble(deltaY, -_config.mouse.maxStep, _config.mouse.maxStep);
 
-    CGEventRef tempEvent = CGEventCreate(NULL);
-    CGPoint currentPos = CGEventGetLocation(tempEvent);
-    CFRelease(tempEvent);
-
-    currentPos.x += deltaX;
-    currentPos.y += deltaY;
-
-    CGRect screenBounds = CGDisplayBounds(CGMainDisplayID());
-    currentPos.x = fmax(screenBounds.origin.x, fmin(currentPos.x, screenBounds.origin.x + screenBounds.size.width));
-    currentPos.y = fmax(screenBounds.origin.y, fmin(currentPos.y, screenBounds.origin.y + screenBounds.size.height));
-    CGWarpMouseCursorPosition(currentPos);
+    [self moveCursorByDeltaX:deltaX deltaY:deltaY];
 }
 
 - (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData {
@@ -899,22 +970,81 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     double deltaX = normalizedX * scale;
     double deltaY = normalizedY * scale;
 
-    CGEventRef tempEvent = CGEventCreate(NULL);
-    CGPoint currentPos = CGEventGetLocation(tempEvent);
-    CFRelease(tempEvent);
-
-    currentPos.x += deltaX;
-    currentPos.y += deltaY;
-
-    CGRect screenBounds = CGDisplayBounds(CGMainDisplayID());
-    currentPos.x = fmax(screenBounds.origin.x, fmin(currentPos.x, screenBounds.origin.x + screenBounds.size.width));
-    currentPos.y = fmax(screenBounds.origin.y, fmin(currentPos.y, screenBounds.origin.y + screenBounds.size.height));
-    CGWarpMouseCursorPosition(currentPos);
+    [self moveCursorByDeltaX:deltaX deltaY:deltaY];
     return YES;
+}
+
+- (void)performPressAction:(const BindingAction&)action down:(BOOL)down keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {
+    switch (action.kind) {
+        case BindingActionKindKey:
+            if (keyboardEnabled) {
+                [self postKeyboardEventForKeyCode:action.keyCode down:down];
+            }
+            break;
+        case BindingActionKindMouseButton:
+            if (mouseEnabled) {
+                [self postMouseButton:action.mouseButton down:down];
+            }
+            break;
+        case BindingActionKindScroll:
+            if (mouseEnabled && down) {
+                [self postScrollX:action.scrollX scrollY:action.scrollY];
+            }
+            break;
+        case BindingActionKindLaunchpad:
+            if (down) {
+                [self openLaunchpad];
+            }
+            break;
+        case BindingActionKindOpenURL:
+            if (down) {
+                [self openURLString:action.url];
+            }
+            break;
+        case BindingActionKindScreenshot:
+        case BindingActionKindNone:
+        default:
+            break;
+    }
+}
+
+- (void)performTapAction:(const BindingAction&)action keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {
+    switch (action.kind) {
+        case BindingActionKindKey:
+            if (keyboardEnabled) {
+                [self postKeyboardEventForKeyCode:action.keyCode down:YES];
+                [self postKeyboardEventForKeyCode:action.keyCode down:NO];
+            }
+            break;
+        case BindingActionKindMouseButton:
+            if (mouseEnabled) {
+                [self postMouseButton:action.mouseButton down:YES];
+                [self postMouseButton:action.mouseButton down:NO];
+            }
+            break;
+        case BindingActionKindScroll:
+            if (mouseEnabled) {
+                [self postScrollX:action.scrollX scrollY:action.scrollY];
+            }
+            break;
+        case BindingActionKindLaunchpad:
+            [self openLaunchpad];
+            break;
+        case BindingActionKindScreenshot:
+            [self takeScreenshot];
+            break;
+        case BindingActionKindOpenURL:
+            [self openURLString:action.url];
+            break;
+        case BindingActionKindNone:
+        default:
+            break;
+    }
 }
 
 - (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    const double tapThreshold = 0.30;
     std::set<uint32_t> relevantMasks;
     for (const auto& entry : _config.bindings) relevantMasks.insert(entry.first);
     switch (self.emulationMode) {
@@ -931,14 +1061,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     for (uint32_t mask : relevantMasks) {
-        const BindingAction* action = [self bindingForMask:mask mode:self.emulationMode];
-        if (!action) {
+        const ButtonBinding* binding = [self bindingForMask:mask mode:self.emulationMode];
+        if (!binding) {
             continue;
         }
         bool wasPressed = (state.lastButtons & mask) != 0;
         bool isPressed = (buttons & mask) != 0;
 
-        if (action->kind == BindingActionKindScreenshot) {
+        if (binding->pressAction.kind == BindingActionKindScreenshot) {
             if ([self isScreenRecordingActive]) {
                 if (isPressed && !wasPressed) {
                     [self stopScreenRecording];
@@ -954,7 +1084,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
                 state.screenshotPressedAt = now;
                 state.screenshotHoldTriggered = false;
             } else if (isPressed && wasPressed) {
-                if (!state.screenshotHoldTriggered && (now - state.screenshotPressedAt) >= 1.5) {
+                if (!state.screenshotHoldTriggered && (now - state.screenshotPressedAt) >= 1.0) {
                     [self startScreenRecording];
                     state.screenshotHoldTriggered = true;
                 }
@@ -972,14 +1102,24 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             continue;
         }
 
-        if (action->kind == BindingActionKindKey && keyboardEnabled) {
-            [self postKeyboardEventForKeyCode:action->keyCode down:isPressed];
-        } else if (action->kind == BindingActionKindMouseButton && mouseEnabled) {
-            [self postMouseButton:action->mouseButton down:isPressed];
-        } else if (action->kind == BindingActionKindScroll && mouseEnabled && isPressed) {
-            [self postScrollX:action->scrollX scrollY:action->scrollY];
-        } else if (action->kind == BindingActionKindLaunchpad && isPressed) {
-            [self openLaunchpad];
+        if (isPressed) {
+            state.buttonPressedAt[mask] = now;
+            if (binding->pressAction.kind != BindingActionKindNone) {
+                [self performPressAction:binding->pressAction down:YES keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+            }
+        } else {
+            if (binding->pressAction.kind != BindingActionKindNone) {
+                [self performPressAction:binding->pressAction down:NO keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+            }
+
+            auto it = state.buttonPressedAt.find(mask);
+            double duration = (it != state.buttonPressedAt.end()) ? (now - it->second) : 0.0;
+            bool shouldTap = (binding->tapAction.kind != BindingActionKindNone) &&
+                             (binding->pressAction.kind == BindingActionKindNone || duration <= tapThreshold);
+            if (shouldTap) {
+                [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+            }
+            state.buttonPressedAt.erase(mask);
         }
     }
 
@@ -998,11 +1138,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     double normalizedX = ([leftStickX doubleValue] - 2047.0) / 2047.0;
-    double normalizedY = ([leftStickY doubleValue] - 2047.0) / 2047.0;
+    double normalizedY = (2047.0 - [leftStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
 
-    bool up = normalizedY < -deadzone;
-    bool down = normalizedY > deadzone;
+    bool up = normalizedY > deadzone;
+    bool down = normalizedY < -deadzone;
     bool left = normalizedX < -deadzone;
     bool right = normalizedX > deadzone;
 

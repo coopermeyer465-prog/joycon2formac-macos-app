@@ -1,4 +1,5 @@
 {
+  "configVersion": 2,
   "mode": "hybrid",
   "enableLeftJoyCon": true,
   "mouse": {
@@ -20,72 +21,81 @@
   "modeBindings": {
     "mouse": {
       "A": "key:space",
-      "B": "key:left_shift",
+      "B": {
+        "press": "key:left_shift",
+        "tap": "key:delete"
+      },
       "R": "mouse:left",
       "ZR": "mouse:right",
-      "X": "key:e",
-      "Y": "key:q",
+      "X": "key:f",
+      "Y": "key:e",
       "L": "mouse:scroll_up",
       "ZL": "mouse:scroll_down",
-      "UP": "mouse:middle",
+      "UP": "key:f5",
       "DOWN": "key:q",
-      "LEFT": "mouse:scroll_up",
-      "RIGHT": "mouse:scroll_down",
+      "LEFT": "key:g",
+      "RIGHT": "key:t",
       "SL(L)": "mouse:scroll_up",
       "SR(L)": "mouse:scroll_down",
       "SL(R)": "mouse:scroll_up",
       "SR(R)": "mouse:scroll_down",
       "LS": "key:left_control",
       "RS": "mouse:middle",
-      "SELECT": "key:t",
+      "SELECT": "key:escape",
       "START": "key:escape",
       "HOME": "system:launchpad",
       "CAMERA": "system:screenshot",
-      "CHAT": "key:t"
+      "CHAT": "system:discord"
     },
     "hybrid": {
       "A": "key:space",
-      "B": "key:left_shift",
+      "B": {
+        "press": "key:left_shift",
+        "tap": "key:delete"
+      },
       "R": "mouse:scroll_down",
       "ZR": "mouse:right",
-      "X": "key:e",
-      "Y": "key:q",
+      "X": "key:f",
+      "Y": "key:e",
       "L": "mouse:scroll_up",
       "ZL": "mouse:left",
-      "UP": "mouse:middle",
+      "UP": "key:f5",
       "DOWN": "key:q",
-      "LEFT": "mouse:scroll_up",
-      "RIGHT": "mouse:scroll_down",
+      "LEFT": "key:g",
+      "RIGHT": "key:t",
       "SL(L)": "mouse:scroll_up",
       "SR(L)": "mouse:scroll_down",
       "SL(R)": "mouse:scroll_up",
       "SR(R)": "mouse:scroll_down",
       "LS": "key:left_control",
       "RS": "key:left_control",
-      "SELECT": "key:t",
+      "SELECT": "key:escape",
       "START": "key:escape",
       "HOME": "system:launchpad",
       "CAMERA": "system:screenshot",
-      "CHAT": "key:t"
+      "CHAT": "system:discord"
     },
     "keyboard": {
       "A": "key:space",
-      "B": "key:left_shift",
+      "B": {
+        "press": "key:left_shift",
+        "tap": "key:delete"
+      },
       "R": "key:return",
       "ZR": "key:left_control",
-      "X": "key:e",
-      "Y": "key:q",
-      "UP": "mouse:middle",
+      "X": "key:f",
+      "Y": "key:e",
+      "UP": "key:f5",
       "DOWN": "key:q",
-      "LEFT": "mouse:scroll_up",
-      "RIGHT": "mouse:scroll_down",
+      "LEFT": "key:g",
+      "RIGHT": "key:t",
       "LS": "key:left_control",
       "RS": "key:return",
-      "SELECT": "key:t",
+      "SELECT": "key:escape",
       "START": "key:escape",
       "HOME": "system:launchpad",
       "CAMERA": "system:screenshot",
-      "CHAT": "key:t"
+      "CHAT": "system:discord"
     }
   }
 }

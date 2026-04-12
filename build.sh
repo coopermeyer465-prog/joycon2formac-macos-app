@@ -2,7 +2,7 @@
 
 # Joy-Con HID Emulator Build Script
 
-echo "Building Joy-Con2forMac Utility..."
+echo "Building JoyCon2forMac Utility..."
 
 cd "$(dirname "$0")"
 
@@ -25,11 +25,11 @@ fi
     echo "Building in FULL mode (Joycon2VirtualHID with BLE and HID emulation) in $BUILD_TYPE mode..."
     clang++ -std=c++17 -x objective-c++ $DEBUG_FLAG -framework Foundation -framework AppKit -framework IOKit -framework CoreBluetooth -framework ApplicationServices -Iinclude src/Joycon2VirtualHID.mm src/Joycon2BLEReceiver.mm src/main_ble.mm -o build/Joycon2VirtualHID
     elif [ "$BUILD_MODE" = "APP" ]; then
-    echo "Building in APP mode (Joycon2forMac.app) in $BUILD_TYPE mode..."
-    APP_DIR="build/Joycon2forMac.app"
+    echo "Building in APP mode (JoyCon2forMac.app) in $BUILD_TYPE mode..."
+    APP_DIR="build/JoyCon2forMac.app"
     mkdir -p "$APP_DIR/Contents/MacOS"
     mkdir -p "$APP_DIR/Contents/Resources"
-    clang++ -std=c++17 -x objective-c++ $DEBUG_FLAG -framework Foundation -framework AppKit -framework IOKit -framework CoreBluetooth -framework ApplicationServices -Iinclude src/Joycon2App.mm src/Joycon2VirtualHID.mm src/Joycon2BLEReceiver.mm -o "$APP_DIR/Contents/MacOS/Joycon2forMac"
+    clang++ -std=c++17 -x objective-c++ $DEBUG_FLAG -framework Foundation -framework AppKit -framework IOKit -framework CoreBluetooth -framework ApplicationServices -Iinclude src/Joycon2App.mm src/Joycon2VirtualHID.mm src/Joycon2BLEReceiver.mm -o "$APP_DIR/Contents/MacOS/JoyCon2forMac"
     cp Joycon2forMac-App-Info.plist "$APP_DIR/Contents/Info.plist"
     cp joycon2_config.json "$APP_DIR/Contents/Resources/joycon2_config.json"
     elif [ "$BUILD_MODE" = "BLE_ONLY" ]; then

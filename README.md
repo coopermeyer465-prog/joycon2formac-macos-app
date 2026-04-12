@@ -74,7 +74,7 @@ Build the BLE parser only:
 Build outputs:
 
 - `build/Joycon2VirtualHID`
-- `build/Joycon2forMac.app`
+- `build/JoyCon2forMac.app`
 - `build/Joycon2BLEReceiver`
 
 ## Run
@@ -90,10 +90,16 @@ Hybrid mode:
 App bundle:
 
 ```bash
-open /Users/marissameyer/Desktop/Joycon2forMac-publish/build/Joycon2forMac.app
+open /Users/marissameyer/Desktop/Joycon2forMac-publish/build/JoyCon2forMac.app
 ```
 
-The app window starts scanning automatically, shows discovery/connection/input status, and includes an embedded JSON editor so you can map any supported Joy-Con button to keyboard keys, mouse buttons, scroll actions, Launchpad, or the screenshot/record action without using Terminal.
+The app window starts scanning automatically, shows discovery/connection/input status, and includes a capture-based mapper:
+
+- click `Map Joy-Con Button`
+- press the Joy-Con button you want to edit
+- choose whether it should act as a held control, a tap action, or both
+- if you choose a keyboard action, press the Mac key you want to bind
+- if you choose a mouse or system action, pick it from the popup
 
 Mouse-only mode:
 
@@ -159,6 +165,7 @@ Example:
 
 ```json
 {
+  "configVersion": 2,
   "mode": "hybrid",
   "enableLeftJoyCon": true,
   "mouse": {
@@ -180,17 +187,36 @@ Example:
   "modeBindings": {
     "mouse": {
       "A": "key:space",
-      "B": "key:left_shift",
+      "B": {
+        "press": "key:left_shift",
+        "tap": "key:delete"
+      },
       "R": "mouse:left",
       "ZR": "mouse:right",
+      "Y": "key:e",
+      "X": "key:f",
+      "RIGHT": "key:t",
+      "LEFT": "key:g",
+      "UP": "key:f5",
+      "DOWN": "key:q",
+      "CHAT": "system:discord",
       "HOME": "system:launchpad"
     },
     "hybrid": {
       "A": "key:space",
-      "B": "key:left_shift",
+      "B": {
+        "press": "key:left_shift",
+        "tap": "key:delete"
+      },
       "R": "mouse:scroll_down",
       "L": "mouse:scroll_up",
-      "ZL": "mouse:left"
+      "ZL": "mouse:left",
+      "Y": "key:e",
+      "X": "key:f",
+      "RIGHT": "key:t",
+      "LEFT": "key:g",
+      "UP": "key:f5",
+      "DOWN": "key:q"
     }
   }
 }
@@ -199,6 +225,7 @@ Example:
 ### Supported config fields
 
 - `mode`: `hybrid`, `mouse`, or `keyboard`
+- `configVersion`: built-in config schema version used by the app for safe upgrades
 - `enableLeftJoyCon`: `true` or `false`
 - `mouse.sensitivity`: cursor scale factor
 - `mouse.deadzone`: ignore tiny sensor deltas
@@ -212,6 +239,9 @@ Example:
 - `keyboard.stickDeadzone`: digital threshold for stick-to-key conversion
 - `bindings`: button-to-action mapping
 - `modeBindings.mouse`, `modeBindings.hybrid`, `modeBindings.keyboard`: per-mode overrides
+- binding values can be:
+  - a string such as `key:space`, which means “hold this action while the Joy-Con button is held”
+  - an object such as `{ "press": "key:left_shift", "tap": "key:delete" }`
 
 ### Supported button names
 
@@ -234,6 +264,7 @@ Example:
 - `mouse:scroll_right`
 - `system:launchpad`
 - `system:screenshot`
+- `system:discord`
 
 Examples:
 
@@ -250,6 +281,17 @@ Examples:
 - Cursor movement comes only from packets marked as **right Joy-Con**.
 - Cursor movement comes from the right Joy-Con **mouse sensor** by default.
 - When you intentionally deflect the right stick, it takes over cursor movement immediately, which keeps mouse mode usable in games that hide the cursor or make the mouse-sensor path awkward.
+- Default Minecraft-style layout now includes:
+  - `A`: jump / `space`
+  - `B`: hold `shift`, tap `delete`
+  - `Y`: inventory / `e`
+  - `X`: interact / `f`
+  - `Right`: chat / `t`
+  - `Left`: emote / `g`
+  - `Up`: change POV / `f5`
+  - `Down`: drop item / `q`
+  - `Plus` and `Minus`: `escape`
+  - `GameChat`: open Discord in the default browser
 - Left Joy-Con packets are ignored completely when `enableLeftJoyCon` is `false`.
 - Button bindings still work in hybrid mode for either controller that is allowed by config.
 - Left stick to keyboard is evaluated from left-controller packets, which avoids the right Joy-Con accidentally cancelling stick directions.
