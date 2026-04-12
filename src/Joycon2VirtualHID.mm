@@ -683,6 +683,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     CGEventRef tempEvent = CGEventCreate(NULL);
     CGPoint currentPos = CGEventGetLocation(tempEvent);
     CFRelease(tempEvent);
+    const bool cursorVisible = CGCursorIsVisible();
 
     CGPoint nextPos = currentPos;
     nextPos.x += deltaX;
@@ -692,19 +693,31 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     nextPos.x = fmax(screenBounds.origin.x, fmin(nextPos.x, screenBounds.origin.x + screenBounds.size.width));
     nextPos.y = fmax(screenBounds.origin.y, fmin(nextPos.y, screenBounds.origin.y + screenBounds.size.height));
 
-    CGEventRef moveEvent = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, nextPos, kCGMouseButtonLeft);
+    CGPoint eventPos = cursorVisible ? nextPos : currentPos;
+    CGEventRef moveEvent = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, eventPos, kCGMouseButtonLeft);
     if (moveEvent) {
         CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
         CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
         CGEventPost(kCGHIDEventTap, moveEvent);
         CFRelease(moveEvent);
     }
-    CGWarpMouseCursorPosition(nextPos);
+    if (cursorVisible) {
+        CGWarpMouseCursorPosition(nextPos);
+    }
 }
 
 - (void)openLaunchpad {
-    [self postKeyboardEventForKeyCode:118 down:YES];
-    [self postKeyboardEventForKeyCode:118 down:NO];
+    NSTask* task = [[NSTask alloc] init];
+    task.launchPath = @"/usr/bin/osascript";
+    task.arguments = @[@"-e", @"tell application \"System Events\" to key code 160"];
+    [task launch];
+    [task waitUntilExit];
+    int status = task.terminationStatus;
+    [task release];
+    if (status != 0) {
+        [self postKeyboardEventForKeyCode:118 down:YES];
+        [self postKeyboardEventForKeyCode:118 down:NO];
+    }
 }
 
 - (void)openURLString:(const std::string&)urlString {
@@ -755,6 +768,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     task.arguments = @[@"-x", outputPath];
     [task launch];
     [task waitUntilExit];
+    NSLog(@"Saved JoyCon2 screenshot to %@", outputPath);
     [task release];
 }
 
@@ -774,6 +788,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _screenRecordingTask.launchPath = @"/usr/sbin/screencapture";
     _screenRecordingTask.arguments = @[@"-v", @"-D1", _screenRecordingPath];
     [_screenRecordingTask launch];
+    NSLog(@"Started JoyCon2 screen recording: %@", _screenRecordingPath);
 }
 
 - (void)stopScreenRecording {
@@ -785,6 +800,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     [_screenRecordingTask waitUntilExit];
     [_screenRecordingTask release];
     _screenRecordingTask = nil;
+    if (_screenRecordingPath) {
+        NSLog(@"Saved JoyCon2 screen recording to %@", _screenRecordingPath);
+    }
 }
 
 - (const ButtonBinding*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode {

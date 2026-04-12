@@ -370,7 +370,7 @@ static NSString* BindingSummaryFromValue(id value) {
     [contentView addSubview:tableScrollView];
 
     NSTextField* controls = [self labelWithFrame:NSMakeRect(24, 24, 772, 68)
-                                             text:@"Click “Map Joy-Con Button”, press the controller button you want to change, then choose whether it should act as a held control, a tap action, or both. Keyboard bindings are learned by pressing the Mac key you want. Mouse actions, Launchpad, Screenshot / Record, and Discord are selectable from popups."
+                                             text:@"Click “Map Joy-Con Button”, press the controller button you want to change, then choose whether it should use a normal press / hold action or a tap-only action. For a normal press / hold action, a quick tap triggers the same output once and holding the Joy-Con button keeps that output held. Keyboard bindings are learned by pressing the Mac key you want. Mouse actions and system actions come from popups."
                                              font:[NSFont systemFontOfSize:12]];
     [controls setLineBreakMode:NSLineBreakByWordWrapping];
     [controls setUsesSingleLineMode:NO];
@@ -696,7 +696,7 @@ static NSString* BindingSummaryFromValue(id value) {
 - (void)runMappingFlowForButton:(NSString*)buttonName {
     NSString* triggerChoice = [self promptWithTitle:@"Choose Trigger Type"
                                             message:[NSString stringWithFormat:@"Choose how %@ should behave.", ButtonDisplayNames()[buttonName] ?: buttonName]
-                                            options:@[@"Press or Hold", @"Tap"]];
+                                            options:@[@"Press / Hold", @"Tap Only"]];
     if (!triggerChoice) {
         self.statusLabel.stringValue = @"Status: mapping cancelled";
         return;
@@ -704,10 +704,10 @@ static NSString* BindingSummaryFromValue(id value) {
 
     NSString* pressAction = nil;
     NSString* tapAction = nil;
-    if ([triggerChoice isEqualToString:@"Tap"]) {
+    if ([triggerChoice isEqualToString:@"Tap Only"]) {
         tapAction = [self promptForActionWithPrompt:@"Choose what should happen when the Joy-Con button is tapped."];
     } else {
-        pressAction = [self promptForActionWithPrompt:@"Choose what should happen when this button is pressed or held."];
+        pressAction = [self promptForActionWithPrompt:@"Choose what should happen when this Joy-Con button is pressed or held. A quick tap will trigger the same output once, while holding the Joy-Con button keeps that output held."];
     }
 
     if (pressAction == nil && tapAction == nil) {

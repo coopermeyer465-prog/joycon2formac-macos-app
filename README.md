@@ -97,7 +97,8 @@ The app window starts scanning automatically, shows discovery/connection/input s
 
 - click `Map Joy-Con Button`
 - press the Joy-Con button you want to edit
-- choose whether it should act as `Press or Hold` or `Tap`
+- choose whether it should use a normal `Press / Hold` action or a `Tap Only` action
+- `Press / Hold` means a quick tap triggers the same output once, while holding the Joy-Con button keeps that output held
 - if you choose a keyboard action, press the Mac key you want to bind
 - if you choose a mouse or system action, pick it from the popup
 
@@ -305,7 +306,7 @@ Examples:
 - Left stick to keyboard is evaluated from left-controller packets, which avoids the right Joy-Con accidentally cancelling stick directions.
 - The screenshot button supports two behaviors by default: tap for a full-screen screenshot in Documents, hold for about 1 second to start screen recording, then tap again to stop and save the recording to Documents.
 - Captures are saved in `~/Documents/JoyCon2forMac Captures`.
-- Launchpad is triggered through the macOS Launchpad keyboard event path now, rather than a direct app launch.
+- Launchpad is triggered through the macOS Launchpad special-key path first, with the keyboard F4 path kept as a fallback.
 
 ## Troubleshooting
 
