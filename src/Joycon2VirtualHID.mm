@@ -332,6 +332,8 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
     BOOL _middleMouseHeld;
     NSWindow *_capturePreviewWindow;
     NSTimer *_capturePreviewTimer;
+    BOOL _hasCursorPosition;
+    CGPoint _cursorPosition;
 }
 - (void)setupKeyboardEventTap;
 - (void)ensureAccessibilityPermission;
@@ -714,9 +716,15 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 }
 
 - (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY {
-    CGEventRef tempEvent = CGEventCreate(NULL);
-    CGPoint currentPos = CGEventGetLocation(tempEvent);
-    CFRelease(tempEvent);
+    BOOL cursorVisible = CGCursorIsVisible();
+    CGPoint currentPos = _cursorPosition;
+    if (!_hasCursorPosition) {
+        CGEventRef tempEvent = CGEventCreate(NULL);
+        currentPos = CGEventGetLocation(tempEvent);
+        CFRelease(tempEvent);
+        _cursorPosition = currentPos;
+        _hasCursorPosition = YES;
+    }
 
     CGPoint nextPos = currentPos;
     nextPos.x += deltaX;
@@ -739,15 +747,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         eventButton = kCGMouseButtonCenter;
     }
 
-    CGEventRef absoluteEvent = CGEventCreateMouseEvent(NULL, eventType, nextPos, eventButton);
-    if (absoluteEvent) {
-        CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
-        CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
-        [self postEventToAllTaps:absoluteEvent];
-        CFRelease(absoluteEvent);
-    }
-
-    if (!_leftMouseHeld && !_rightMouseHeld && !_middleMouseHeld) {
+    if (!cursorVisible) {
         CGEventRef relativeEvent = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, currentPos, kCGMouseButtonLeft);
         if (relativeEvent) {
             CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
@@ -757,7 +757,15 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         }
     }
 
-    CGWarpMouseCursorPosition(nextPos);
+    CGEventRef absoluteEvent = CGEventCreateMouseEvent(NULL, eventType, nextPos, eventButton);
+    if (absoluteEvent) {
+        CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
+        CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
+        [self postEventToAllTaps:absoluteEvent];
+        CFRelease(absoluteEvent);
+    }
+
+    _cursorPosition = nextPos;
 }
 
 - (void)openLaunchpad {
@@ -962,7 +970,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
         [_capturePreviewWindow orderFrontRegardless];
 
-        _capturePreviewTimer = [[NSTimer scheduledTimerWithTimeInterval:2.0
+        _capturePreviewTimer = [[NSTimer scheduledTimerWithTimeInterval:4.0
                                                                  target:self
                                                                selector:@selector(hideCapturePreview:)
                                                                userInfo:nil
@@ -1064,6 +1072,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _leftMouseHeld = NO;
     _rightMouseHeld = NO;
     _middleMouseHeld = NO;
+    _hasCursorPosition = NO;
 }
 
 - (void)sendHIDReportFromJoyconData:(NSDictionary *)joyconData {
@@ -1369,7 +1378,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
                 auto lastTapIt = state.lastTapActionAt.find(mask);
                 double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
                 double requiredDebounce = (mask == 0x00080000 && binding->tapAction.kind == BindingActionKindMacro &&
-                                           binding->tapAction.macroKind == BindingMacroKindDoubleW) ? 0.75 : tapDebounce;
+                                           binding->tapAction.macroKind == BindingMacroKindDoubleW) ? 2.0 : tapDebounce;
                 if (elapsedSinceLastTap >= requiredDebounce) {
                     [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
                     state.lastTapActionAt[mask] = now;
@@ -1388,7 +1397,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
                 auto lastTapIt = state.lastTapActionAt.find(mask);
                 double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
                 double requiredDebounce = (mask == 0x00080000 && binding->tapAction.kind == BindingActionKindMacro &&
-                                           binding->tapAction.macroKind == BindingMacroKindDoubleW) ? 0.75 : tapDebounce;
+                                           binding->tapAction.macroKind == BindingMacroKindDoubleW) ? 2.0 : tapDebounce;
                 if (elapsedSinceLastTap >= requiredDebounce) {
                     [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
                     state.lastTapActionAt[mask] = now;
@@ -1471,9 +1480,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         _middleMouseHeld = down;
     }
 
-    CGEventRef tempEvent = CGEventCreate(NULL);
-    CGPoint currentPos = CGEventGetLocation(tempEvent);
-    CFRelease(tempEvent);
+    CGPoint currentPos = _cursorPosition;
+    if (!_hasCursorPosition) {
+        CGEventRef tempEvent = CGEventCreate(NULL);
+        currentPos = CGEventGetLocation(tempEvent);
+        CFRelease(tempEvent);
+        _cursorPosition = currentPos;
+        _hasCursorPosition = YES;
+    }
 
     CGEventType eventType = kCGEventLeftMouseDown;
     if (button == kCGMouseButtonLeft) {
