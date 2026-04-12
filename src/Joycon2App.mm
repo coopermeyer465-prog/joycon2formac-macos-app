@@ -13,6 +13,7 @@
 @property (strong, nonatomic) Joycon2BLEReceiver* receiver;
 @property (strong, nonatomic) Joycon2VirtualHID* hid;
 @property (copy, nonatomic) NSString* configPath;
+@property (strong, nonatomic) NSMutableSet* activeControllers;
 @property (assign, nonatomic) BOOL running;
 @end
 
@@ -159,10 +160,12 @@
 }
 
 - (void)startController {
-    self.receiver = [[Joycon2BLEReceiver alloc] init];
+    self.activeControllers = [NSMutableSet set];
+    self.receiver = [Joycon2BLEReceiver sharedInstance];
     self.hid = [[Joycon2VirtualHID alloc] initWithMode:[self selectedMode] modeOverridden:YES configPath:self.configPath];
     void (^hidConnected)(void) = [[self.receiver.onConnected copy] autorelease];
     void (^hidFound)(NSString*, NSString*) = [[self.receiver.onDeviceFound copy] autorelease];
+    void (^hidData)(NSDictionary*) = [[self.receiver.onDataReceived copy] autorelease];
     void (^hidError)(NSString*) = [[self.receiver.onError copy] autorelease];
 
     __block Joycon2AppDelegate* weakSelf = self;
@@ -179,7 +182,41 @@
             hidConnected();
         }
         dispatch_async(dispatch_get_main_queue(), ^{
-            weakSelf.statusLabel.stringValue = @"Status: Joy-Con connected";
+            weakSelf.statusLabel.stringValue = @"Status: Joy-Con connected, waiting for input";
+        });
+    };
+    self.receiver.onDataReceived = ^(NSDictionary* data) {
+        if (hidData) {
+            hidData(data);
+        }
+        NSString* deviceType = data[@"DeviceType"] ?: @"Unknown";
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSString* controllerLabel = @"Joy-Con";
+            BOOL addedController = NO;
+            if ([deviceType isEqualToString:@"L"]) {
+                if (![weakSelf.activeControllers containsObject:@"Left"]) {
+                    [weakSelf.activeControllers addObject:@"Left"];
+                    addedController = YES;
+                }
+            } else if ([deviceType isEqualToString:@"R"]) {
+                if (![weakSelf.activeControllers containsObject:@"Right"]) {
+                    [weakSelf.activeControllers addObject:@"Right"];
+                    addedController = YES;
+                }
+            }
+
+            if (weakSelf.activeControllers.count == 2) {
+                controllerLabel = @"Left + Right Joy-Con";
+            } else if ([weakSelf.activeControllers containsObject:@"Right"]) {
+                controllerLabel = @"Right Joy-Con";
+            } else if ([weakSelf.activeControllers containsObject:@"Left"]) {
+                controllerLabel = @"Left Joy-Con";
+            }
+
+            NSString* status = [NSString stringWithFormat:@"Status: receiving input from %@", controllerLabel];
+            if (addedController || ![weakSelf.statusLabel.stringValue isEqualToString:status]) {
+                weakSelf.statusLabel.stringValue = status;
+            }
         });
     };
     self.receiver.onError = ^(NSString* error) {
@@ -201,6 +238,7 @@
     [self.hid stopEmulation];
     self.hid = nil;
     self.receiver = nil;
+    self.activeControllers = nil;
     self.running = NO;
     [self.statusLabel setStringValue:@"Status: stopped"];
     [self.toggleButton setTitle:@"Start"];

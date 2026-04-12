@@ -93,6 +93,8 @@ App bundle:
 open /Users/marissameyer/Desktop/Joycon2forMac-publish/build/Joycon2forMac.app
 ```
 
+The app window starts scanning automatically, shows discovery/connection/input status, and includes an embedded JSON editor so you can map any supported Joy-Con button to keyboard keys, mouse buttons, scroll actions, Launchpad, or the screenshot/record action without using Terminal.
+
 Mouse-only mode:
 
 ```bash
@@ -246,12 +248,13 @@ Examples:
 ## Notes About Controller Behavior
 
 - Cursor movement comes only from packets marked as **right Joy-Con**.
-- Cursor movement currently comes from the right Joy-Con **mouse sensor**, not the right stick.
-- When the mouse sensor path is idle or a game hides the cursor, the right stick becomes a mouse fallback so pointer control still works in hidden-cursor games.
+- Cursor movement comes from the right Joy-Con **mouse sensor** by default.
+- When you intentionally deflect the right stick, it takes over cursor movement immediately, which keeps mouse mode usable in games that hide the cursor or make the mouse-sensor path awkward.
 - Left Joy-Con packets are ignored completely when `enableLeftJoyCon` is `false`.
 - Button bindings still work in hybrid mode for either controller that is allowed by config.
 - Left stick to keyboard is evaluated from left-controller packets, which avoids the right Joy-Con accidentally cancelling stick directions.
 - The screenshot button supports two behaviors by default: tap for a full-screen screenshot in Documents, hold for about 1.5 seconds to start screen recording, then tap again to stop and save the recording to Documents.
+- Launchpad uses the system `open -a Launchpad` path, which is more reliable than treating it like a normal app bundle.
 
 ## Troubleshooting
 
@@ -277,6 +280,11 @@ Set:
 - check the button name in `bindings`
 - check the key name format, for example `key:space` or `key:escape`
 - make sure the app has Accessibility permission
+
+### Screenshot or screen recording does not start
+
+- allow the app or terminal in `System Settings -> Privacy & Security -> Screen Recording`
+- screenshots and recordings are saved in `Documents`
 
 ### BLE connects but no packets arrive
 

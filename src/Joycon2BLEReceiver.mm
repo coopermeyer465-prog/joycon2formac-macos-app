@@ -551,6 +551,9 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
 static Joycon2BLEReceiver* sharedInstance = nil;
 
 + (Joycon2BLEReceiver*)sharedInstance {
+    if (!sharedInstance) {
+        sharedInstance = [[Joycon2BLEReceiver alloc] init];
+    }
     return sharedInstance;
 }
 

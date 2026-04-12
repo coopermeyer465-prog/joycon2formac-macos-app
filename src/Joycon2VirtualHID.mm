@@ -285,8 +285,8 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)startScreenRecording;
 - (void)stopScreenRecording;
 - (BOOL)isScreenRecordingActive;
+- (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData;
 - (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
-- (void)processRightStickMouseFromData:(NSDictionary*)joyconData;
 - (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled;
 - (void)processLeftStickFromData:(NSDictionary*)joyconData state:(DeviceState&)state;
 @end
@@ -610,15 +610,16 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 }
 
 - (void)openLaunchpad {
-    NSURL* launchpadURL = [NSURL fileURLWithPath:@"/System/Applications/Launchpad.app"];
-    if (![[NSFileManager defaultManager] fileExistsAtPath:launchpadURL.path]) {
-        return;
+    NSTask* task = [[NSTask alloc] init];
+    task.launchPath = @"/usr/bin/open";
+    task.arguments = @[@"-a", @"Launchpad"];
+    @try {
+        [task launch];
+        [task waitUntilExit];
+    } @catch (NSException* exception) {
+        NSLog(@"Failed to open Launchpad: %@", exception.reason);
     }
-
-    if (@available(macOS 10.15, *)) {
-        NSWorkspaceOpenConfiguration* configuration = [NSWorkspaceOpenConfiguration configuration];
-        [[NSWorkspace sharedWorkspace] openApplicationAtURL:launchpadURL configuration:configuration completionHandler:nil];
-    }
+    [task release];
 }
 
 - (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension {
@@ -779,13 +780,25 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 - (void)processMouseSensorFromData:(NSDictionary*)joyconData state:(DeviceState&)state {
     NSNumber* mouseXNumber = joyconData[@"MouseX"];
     NSNumber* mouseYNumber = joyconData[@"MouseY"];
+    BOOL rightStickMoved = [self processRightStickMouseFromData:joyconData];
     if (!mouseXNumber || !mouseYNumber) {
-        [self processRightStickMouseFromData:joyconData];
         return;
     }
 
     int16_t mouseX = (int16_t)[mouseXNumber intValue];
     int16_t mouseY = (int16_t)[mouseYNumber intValue];
+
+    if (rightStickMoved) {
+        state.lastMouseX = mouseX;
+        state.lastMouseY = mouseY;
+        state.hasMouseSample = true;
+        state.smoothedDeltaX *= 0.5;
+        state.smoothedDeltaY *= 0.5;
+        if (state.calibrationEndsAt == 0.0) {
+            state.calibrationEndsAt = CFAbsoluteTimeGetCurrent() + _config.mouse.calibrationSeconds;
+        }
+        return;
+    }
 
     if (!state.hasMouseSample) {
         state.lastMouseX = mouseX;
@@ -846,7 +859,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (_config.mouse.invertY) deltaY = -deltaY;
 
     if (std::fabs(deltaX) < 0.01 && std::fabs(deltaY) < 0.01) {
-        [self processRightStickMouseFromData:joyconData];
         return;
     }
 
@@ -866,11 +878,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     CGWarpMouseCursorPosition(currentPos);
 }
 
-- (void)processRightStickMouseFromData:(NSDictionary*)joyconData {
+- (BOOL)processRightStickMouseFromData:(NSDictionary*)joyconData {
     NSNumber* rightStickX = joyconData[@"RightStickX"];
     NSNumber* rightStickY = joyconData[@"RightStickY"];
     if (!rightStickX || !rightStickY) {
-        return;
+        return NO;
     }
 
     double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
@@ -880,10 +892,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (std::fabs(normalizedX) < deadzone) normalizedX = 0.0;
     if (std::fabs(normalizedY) < deadzone) normalizedY = 0.0;
     if (normalizedX == 0.0 && normalizedY == 0.0) {
-        return;
+        return NO;
     }
 
-    double scale = std::max(8.0, _config.mouse.maxStep * 0.7);
+    double scale = std::max(10.0, _config.mouse.maxStep * 0.85);
     double deltaX = normalizedX * scale;
     double deltaY = normalizedY * scale;
 
@@ -898,6 +910,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     currentPos.x = fmax(screenBounds.origin.x, fmin(currentPos.x, screenBounds.origin.x + screenBounds.size.width));
     currentPos.y = fmax(screenBounds.origin.y, fmin(currentPos.y, screenBounds.origin.y + screenBounds.size.height));
     CGWarpMouseCursorPosition(currentPos);
+    return YES;
 }
 
 - (void)processButtonBindings:(uint32_t)buttons state:(DeviceState&)state keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {

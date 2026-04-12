@@ -30,7 +30,7 @@ int main(int argc, const char * argv[]) {
     }
 
     @autoreleasepool {
-        Joycon2BLEReceiver *viewer = [[Joycon2BLEReceiver alloc] init];
+        Joycon2BLEReceiver *viewer = [Joycon2BLEReceiver sharedInstance];
 #ifndef HID_ENABLE
         Joycon2VirtualHID *hid = [[Joycon2VirtualHID alloc] initWithMode:mode modeOverridden:modeOverridden configPath:configPath];
 #endif
@@ -45,7 +45,6 @@ int main(int argc, const char * argv[]) {
             [viewer startScan];
 #endif
             CFRunLoopRun();
-            [viewer release];
 #ifndef HID_ENABLE
             [hid release];
 #endif
