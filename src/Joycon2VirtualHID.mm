@@ -9,6 +9,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <unistd.h>
 
 typedef NS_ENUM(NSInteger, BindingActionKind) {
     BindingActionKindNone = 0,
@@ -17,7 +18,14 @@ typedef NS_ENUM(NSInteger, BindingActionKind) {
     BindingActionKindScroll,
     BindingActionKindLaunchpad,
     BindingActionKindScreenshot,
-    BindingActionKindOpenURL
+    BindingActionKindOpenURL,
+    BindingActionKindMacro
+};
+
+typedef NS_ENUM(NSInteger, BindingMacroKind) {
+    BindingMacroKindNone = 0,
+    BindingMacroKindPOV,
+    BindingMacroKindDoubleW
 };
 
 struct MouseConfig {
@@ -39,6 +47,7 @@ struct KeyboardConfig {
 
 struct BindingAction {
     BindingActionKind kind = BindingActionKindNone;
+    BindingMacroKind macroKind = BindingMacroKindNone;
     CGKeyCode keyCode = 0;
     CGMouseButton mouseButton = kCGMouseButtonLeft;
     int scrollX = 0;
@@ -239,6 +248,12 @@ static BindingAction ParseActionString(NSString* actionString, const RuntimeConf
         } else if (target == "discord") {
             action.kind = BindingActionKindOpenURL;
             action.url = "https://discord.com/app";
+        } else if (target == "pov") {
+            action.kind = BindingActionKindMacro;
+            action.macroKind = BindingMacroKindPOV;
+        } else if (target == "double_w") {
+            action.kind = BindingActionKindMacro;
+            action.macroKind = BindingMacroKindDoubleW;
         }
     }
 
@@ -311,11 +326,13 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
 - (void)switchToMode:(EmulationMode)mode;
 - (void)releaseAllPressedInputs;
 - (void)postKeyboardEventForKeyCode:(CGKeyCode)keyCode down:(BOOL)down;
+- (void)postKeyboardTapForKeyCode:(CGKeyCode)keyCode flags:(CGEventFlags)flags;
 - (void)postMouseButton:(CGMouseButton)button down:(BOOL)down;
 - (void)postScrollX:(int32_t)scrollX scrollY:(int32_t)scrollY;
 - (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY;
 - (void)openLaunchpad;
 - (void)openURLString:(const std::string&)urlString;
+- (void)runMacro:(BindingMacroKind)macroKind;
 - (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension;
 - (void)takeScreenshot;
 - (void)startScreenRecording;
@@ -523,16 +540,16 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.mouseBindings, "Y", @"key:e");
     bindPress(_config.mouseBindings, "L", @"mouse:scroll_up");
     bindPress(_config.mouseBindings, "ZL", @"mouse:scroll_down");
-    bindPress(_config.mouseBindings, "UP", @"key:f5");
+    bindPress(_config.mouseBindings, "UP", @"system:pov");
     bindPress(_config.mouseBindings, "DOWN", @"key:q");
-    bindPress(_config.mouseBindings, "LEFT", @"key:g");
+    bindPress(_config.mouseBindings, "LEFT", @"key:left_arrow");
     bindPress(_config.mouseBindings, "RIGHT", @"key:t");
     bindPress(_config.mouseBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.mouseBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.mouseBindings, "SL(R)", @"mouse:scroll_up");
     bindPress(_config.mouseBindings, "SR(R)", @"mouse:scroll_down");
-    bindPress(_config.mouseBindings, "LS", @"key:left_control");
-    bindPress(_config.mouseBindings, "RS", @"mouse:middle");
+    bindPress(_config.mouseBindings, "LS", @"system:double_w");
+    bindPress(_config.mouseBindings, "RS", @"system:pov");
     bindPress(_config.mouseBindings, "SELECT", @"key:escape");
     bindPress(_config.mouseBindings, "START", @"key:escape");
     bindPress(_config.mouseBindings, "HOME", @"system:launchpad");
@@ -548,16 +565,16 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.hybridBindings, "ZR", @"mouse:right");
     bindPress(_config.hybridBindings, "L", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "ZL", @"mouse:left");
-    bindPress(_config.hybridBindings, "UP", @"key:f5");
+    bindPress(_config.hybridBindings, "UP", @"system:pov");
     bindPress(_config.hybridBindings, "DOWN", @"key:q");
-    bindPress(_config.hybridBindings, "LEFT", @"key:g");
+    bindPress(_config.hybridBindings, "LEFT", @"key:left_arrow");
     bindPress(_config.hybridBindings, "RIGHT", @"key:t");
     bindPress(_config.hybridBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.hybridBindings, "SL(R)", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "SR(R)", @"mouse:scroll_down");
-    bindPress(_config.hybridBindings, "LS", @"key:left_control");
-    bindPress(_config.hybridBindings, "RS", @"key:left_control");
+    bindPress(_config.hybridBindings, "LS", @"system:double_w");
+    bindPress(_config.hybridBindings, "RS", @"system:pov");
     bindPress(_config.hybridBindings, "SELECT", @"key:escape");
     bindPress(_config.hybridBindings, "START", @"key:escape");
     bindPress(_config.hybridBindings, "HOME", @"system:launchpad");
@@ -573,16 +590,16 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.keyboardBindings, "ZR", @"key:left_control");
     bindPress(_config.keyboardBindings, "L", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "ZL", @"mouse:scroll_down");
-    bindPress(_config.keyboardBindings, "UP", @"key:f5");
+    bindPress(_config.keyboardBindings, "UP", @"system:pov");
     bindPress(_config.keyboardBindings, "DOWN", @"key:q");
-    bindPress(_config.keyboardBindings, "LEFT", @"key:g");
+    bindPress(_config.keyboardBindings, "LEFT", @"key:left_arrow");
     bindPress(_config.keyboardBindings, "RIGHT", @"key:t");
     bindPress(_config.keyboardBindings, "SL(L)", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "SR(L)", @"mouse:scroll_down");
     bindPress(_config.keyboardBindings, "SL(R)", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "SR(R)", @"mouse:scroll_down");
-    bindPress(_config.keyboardBindings, "LS", @"key:left_control");
-    bindPress(_config.keyboardBindings, "RS", @"key:return");
+    bindPress(_config.keyboardBindings, "LS", @"system:double_w");
+    bindPress(_config.keyboardBindings, "RS", @"system:pov");
     bindPress(_config.keyboardBindings, "SELECT", @"key:escape");
     bindPress(_config.keyboardBindings, "START", @"key:escape");
     bindPress(_config.keyboardBindings, "HOME", @"system:launchpad");
@@ -701,14 +718,34 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 }
 
+- (void)runMacro:(BindingMacroKind)macroKind {
+    switch (macroKind) {
+        case BindingMacroKindPOV:
+            [self postKeyboardTapForKeyCode:96 flags:kCGEventFlagMaskSecondaryFn];
+            break;
+        case BindingMacroKindDoubleW:
+            [self postKeyboardEventForKeyCode:13 down:YES];
+            [self postKeyboardEventForKeyCode:13 down:NO];
+            usleep(25000);
+            [self postKeyboardEventForKeyCode:13 down:YES];
+            [self postKeyboardEventForKeyCode:13 down:NO];
+            break;
+        case BindingMacroKindNone:
+        default:
+            break;
+    }
+}
+
 - (NSString*)documentsCapturePathWithPrefix:(NSString*)prefix extension:(NSString*)extension {
     NSString* documentsDirectory = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    NSString* capturesDirectory = [documentsDirectory stringByAppendingPathComponent:@"JoyCon2forMac Captures"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:capturesDirectory withIntermediateDirectories:YES attributes:nil error:nil];
     NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
     formatter.dateFormat = @"yyyy-MM-dd_HH-mm-ss";
     NSString* timestamp = [formatter stringFromDate:[NSDate date]];
     [formatter release];
     NSString* fileName = [NSString stringWithFormat:@"%@_%@.%@", prefix, timestamp, extension];
-    return [documentsDirectory stringByAppendingPathComponent:fileName];
+    return [capturesDirectory stringByAppendingPathComponent:fileName];
 }
 
 - (void)takeScreenshot {
@@ -839,12 +876,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return;
     }
 
-    BOOL mouseEnabled = (self.emulationMode == MODE_MOUSE || self.emulationMode == MODE_HYBRID);
-    BOOL keyboardEnabled = (self.emulationMode == MODE_KEYBOARD || self.emulationMode == MODE_HYBRID);
+    BOOL mouseMotionEnabled = (self.emulationMode == MODE_MOUSE || self.emulationMode == MODE_HYBRID);
+    BOOL leftStickEnabled = (self.emulationMode == MODE_KEYBOARD || self.emulationMode == MODE_HYBRID);
+    BOOL mouseEnabled = YES;
+    BOOL keyboardEnabled = YES;
 
     DeviceState& state = _deviceStates[[identifier UTF8String]];
 
-    if (mouseEnabled && deviceType == "R") {
+    if (mouseMotionEnabled && deviceType == "R") {
         [self processMouseSensorFromData:joyconData state:state];
     }
 
@@ -852,7 +891,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     uint32_t buttons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
     [self processButtonBindings:buttons state:state keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
 
-    if (keyboardEnabled && (deviceType == "L" || deviceType == "Unknown")) {
+    if (leftStickEnabled && (deviceType == "L" || deviceType == "Unknown")) {
         [self processLeftStickFromData:joyconData state:state];
     }
 #endif
@@ -1001,6 +1040,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
                 [self openURLString:action.url];
             }
             break;
+        case BindingActionKindMacro:
+            if (down) {
+                [self runMacro:action.macroKind];
+            }
+            break;
         case BindingActionKindScreenshot:
         case BindingActionKindNone:
         default:
@@ -1035,6 +1079,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             break;
         case BindingActionKindOpenURL:
             [self openURLString:action.url];
+            break;
+        case BindingActionKindMacro:
+            [self runMacro:action.macroKind];
             break;
         case BindingActionKindNone:
         default:
@@ -1169,6 +1216,22 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
     CGEventPost(kCGHIDEventTap, event);
     CFRelease(event);
+}
+
+- (void)postKeyboardTapForKeyCode:(CGKeyCode)keyCode flags:(CGEventFlags)flags {
+    CGEventRef downEvent = CGEventCreateKeyboardEvent(NULL, keyCode, YES);
+    CGEventRef upEvent = CGEventCreateKeyboardEvent(NULL, keyCode, NO);
+    if (!downEvent || !upEvent) {
+        if (downEvent) CFRelease(downEvent);
+        if (upEvent) CFRelease(upEvent);
+        return;
+    }
+    CGEventSetFlags(downEvent, flags);
+    CGEventSetFlags(upEvent, flags);
+    CGEventPost(kCGHIDEventTap, downEvent);
+    CGEventPost(kCGHIDEventTap, upEvent);
+    CFRelease(downEvent);
+    CFRelease(upEvent);
 }
 
 - (void)postMouseButton:(CGMouseButton)button down:(BOOL)down {

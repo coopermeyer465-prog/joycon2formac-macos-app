@@ -3,7 +3,7 @@
 #import "../include/Joycon2BLEReceiver.h"
 #import "../include/Joycon2VirtualHID.h"
 
-static NSInteger const kJoyConConfigVersion = 2;
+static NSInteger const kJoyConConfigVersion = 3;
 
 static NSArray<NSString*>* ButtonOrder(void) {
     static NSArray<NSString*>* buttons = nil;
@@ -166,6 +166,7 @@ static NSString* BindingSummaryFromValue(id value) {
 @property (strong, nonatomic) NSMutableSet* activeControllers;
 @property (strong, nonatomic) NSMutableDictionary* configDocument;
 @property (strong, nonatomic) NSMutableDictionary* lastButtonsByController;
+@property (strong, nonatomic) NSMutableDictionary* batteryStatusBySide;
 @property (copy, nonatomic) NSString* pendingButtonName;
 @property (assign, nonatomic) BOOL awaitingJoyConButton;
 @property (assign, nonatomic) BOOL running;
@@ -239,6 +240,28 @@ static NSString* BindingSummaryFromValue(id value) {
     if (![self.configDocument[@"modeBindings"] isKindOfClass:[NSDictionary class]]) {
         self.configDocument[@"modeBindings"] = [NSMutableDictionary dictionary];
     }
+}
+
+- (NSInteger)estimatedBatteryPercentFromVoltage:(double)voltage {
+    double normalized = (voltage - 3.2) / 0.95;
+    NSInteger percent = (NSInteger)llround(fmax(0.0, fmin(1.0, normalized)) * 100.0);
+    return percent;
+}
+
+- (NSString*)composeLiveStatusForControllerLabel:(NSString*)controllerLabel {
+    NSMutableArray<NSString*>* batteryParts = [NSMutableArray array];
+    NSString* leftBattery = self.batteryStatusBySide[@"Left"];
+    NSString* rightBattery = self.batteryStatusBySide[@"Right"];
+    if (leftBattery.length > 0) {
+        [batteryParts addObject:[NSString stringWithFormat:@"L %@", leftBattery]];
+    }
+    if (rightBattery.length > 0) {
+        [batteryParts addObject:[NSString stringWithFormat:@"R %@", rightBattery]];
+    }
+    if (batteryParts.count == 0) {
+        return [NSString stringWithFormat:@"Status: receiving input from %@", controllerLabel];
+    }
+    return [NSString stringWithFormat:@"Status: receiving input from %@ | Battery: %@", controllerLabel, [batteryParts componentsJoinedByString:@"  "]];
 }
 
 - (NSMutableDictionary*)mutableModeBindingsForCurrentMode {
@@ -401,6 +424,7 @@ static NSString* BindingSummaryFromValue(id value) {
 - (void)startController {
     self.activeControllers = [NSMutableSet set];
     self.lastButtonsByController = [NSMutableDictionary dictionary];
+    self.batteryStatusBySide = [NSMutableDictionary dictionary];
     self.receiver = [Joycon2BLEReceiver sharedInstance];
     self.hid = [[Joycon2VirtualHID alloc] initWithMode:[self selectedMode] modeOverridden:YES configPath:self.configPath];
     void (^hidConnected)(void) = [[self.receiver.onConnected copy] autorelease];
@@ -436,11 +460,20 @@ static NSString* BindingSummaryFromValue(id value) {
         weakSelf.lastButtonsByController[controllerKey] = @(buttons);
 
         NSString* deviceType = data[@"DeviceType"] ?: @"Unknown";
+        NSNumber* batteryVoltage = data[@"BatteryVoltage"];
         dispatch_async(dispatch_get_main_queue(), ^{
             if ([deviceType isEqualToString:@"L"]) {
                 [weakSelf.activeControllers addObject:@"Left"];
+                if ([batteryVoltage isKindOfClass:[NSNumber class]]) {
+                    NSInteger percent = [weakSelf estimatedBatteryPercentFromVoltage:[batteryVoltage doubleValue]];
+                    weakSelf.batteryStatusBySide[@"Left"] = [NSString stringWithFormat:@"%ld%% est", (long)percent];
+                }
             } else if ([deviceType isEqualToString:@"R"]) {
                 [weakSelf.activeControllers addObject:@"Right"];
+                if ([batteryVoltage isKindOfClass:[NSNumber class]]) {
+                    NSInteger percent = [weakSelf estimatedBatteryPercentFromVoltage:[batteryVoltage doubleValue]];
+                    weakSelf.batteryStatusBySide[@"Right"] = [NSString stringWithFormat:@"%ld%% est", (long)percent];
+                }
             }
 
             NSString* controllerLabel = @"Joy-Con";
@@ -466,7 +499,7 @@ static NSString* BindingSummaryFromValue(id value) {
                 }
             }
 
-            weakSelf.statusLabel.stringValue = [NSString stringWithFormat:@"Status: receiving input from %@", controllerLabel];
+            weakSelf.statusLabel.stringValue = [weakSelf composeLiveStatusForControllerLabel:controllerLabel];
         });
     };
     self.receiver.onError = ^(NSString* error) {
@@ -490,6 +523,7 @@ static NSString* BindingSummaryFromValue(id value) {
     self.receiver = nil;
     self.activeControllers = nil;
     self.lastButtonsByController = nil;
+    self.batteryStatusBySide = nil;
     self.awaitingJoyConButton = NO;
     self.running = NO;
     [self.statusLabel setStringValue:@"Status: stopped"];
@@ -618,7 +652,9 @@ static NSString* BindingSummaryFromValue(id value) {
     NSDictionary* systemMap = @{
         @"Launchpad": @"system:launchpad",
         @"Screenshot / Screen Record": @"system:screenshot",
-        @"Open Discord": @"system:discord"
+        @"Open Discord": @"system:discord",
+        @"Change POV (Fn+F5)": @"system:pov",
+        @"Double W": @"system:double_w"
     };
     NSString* label = [self promptWithTitle:@"Choose System Action"
                                     message:prompt
@@ -660,7 +696,7 @@ static NSString* BindingSummaryFromValue(id value) {
 - (void)runMappingFlowForButton:(NSString*)buttonName {
     NSString* triggerChoice = [self promptWithTitle:@"Choose Trigger Type"
                                             message:[NSString stringWithFormat:@"Choose how %@ should behave.", ButtonDisplayNames()[buttonName] ?: buttonName]
-                                            options:@[@"Hold", @"Tap", @"Hold + Tap"]];
+                                            options:@[@"Press or Hold", @"Tap"]];
     if (!triggerChoice) {
         self.statusLabel.stringValue = @"Status: mapping cancelled";
         return;
@@ -668,17 +704,10 @@ static NSString* BindingSummaryFromValue(id value) {
 
     NSString* pressAction = nil;
     NSString* tapAction = nil;
-    if ([triggerChoice isEqualToString:@"Hold"]) {
-        pressAction = [self promptForActionWithPrompt:@"Choose what should happen while the Joy-Con button is held."];
-    } else if ([triggerChoice isEqualToString:@"Tap"]) {
+    if ([triggerChoice isEqualToString:@"Tap"]) {
         tapAction = [self promptForActionWithPrompt:@"Choose what should happen when the Joy-Con button is tapped."];
     } else {
-        pressAction = [self promptForActionWithPrompt:@"Choose the held action."];
-        if (pressAction == nil) {
-            self.statusLabel.stringValue = @"Status: mapping cancelled";
-            return;
-        }
-        tapAction = [self promptForActionWithPrompt:@"Choose the tap action."];
+        pressAction = [self promptForActionWithPrompt:@"Choose what should happen when this button is pressed or held."];
     }
 
     if (pressAction == nil && tapAction == nil) {

@@ -97,7 +97,7 @@ The app window starts scanning automatically, shows discovery/connection/input s
 
 - click `Map Joy-Con Button`
 - press the Joy-Con button you want to edit
-- choose whether it should act as a held control, a tap action, or both
+- choose whether it should act as `Press or Hold` or `Tap`
 - if you choose a keyboard action, press the Mac key you want to bind
 - if you choose a mouse or system action, pick it from the popup
 
@@ -165,7 +165,7 @@ Example:
 
 ```json
 {
-  "configVersion": 2,
+  "configVersion": 3,
   "mode": "hybrid",
   "enableLeftJoyCon": true,
   "mouse": {
@@ -196,9 +196,11 @@ Example:
       "Y": "key:e",
       "X": "key:f",
       "RIGHT": "key:t",
-      "LEFT": "key:g",
-      "UP": "key:f5",
+      "LEFT": "key:left_arrow",
+      "UP": "system:pov",
       "DOWN": "key:q",
+      "LS": "system:double_w",
+      "RS": "system:pov",
       "CHAT": "system:discord",
       "HOME": "system:launchpad"
     },
@@ -214,9 +216,11 @@ Example:
       "Y": "key:e",
       "X": "key:f",
       "RIGHT": "key:t",
-      "LEFT": "key:g",
-      "UP": "key:f5",
-      "DOWN": "key:q"
+      "LEFT": "key:left_arrow",
+      "UP": "system:pov",
+      "DOWN": "key:q",
+      "LS": "system:double_w",
+      "RS": "system:pov"
     }
   }
 }
@@ -265,6 +269,8 @@ Example:
 - `system:launchpad`
 - `system:screenshot`
 - `system:discord`
+- `system:pov`
+- `system:double_w`
 
 Examples:
 
@@ -287,15 +293,18 @@ Examples:
   - `Y`: inventory / `e`
   - `X`: interact / `f`
   - `Right`: chat / `t`
-  - `Left`: emote / `g`
-  - `Up`: change POV / `f5`
+  - `Left`: left arrow
+  - `Up`: change POV / `Fn+F5`
   - `Down`: drop item / `q`
+  - `LS`: double-tap `w`
+  - `RS`: change POV / `Fn+F5`
   - `Plus` and `Minus`: `escape`
   - `GameChat`: open Discord in the default browser
 - Left Joy-Con packets are ignored completely when `enableLeftJoyCon` is `false`.
 - Button bindings still work in hybrid mode for either controller that is allowed by config.
 - Left stick to keyboard is evaluated from left-controller packets, which avoids the right Joy-Con accidentally cancelling stick directions.
 - The screenshot button supports two behaviors by default: tap for a full-screen screenshot in Documents, hold for about 1 second to start screen recording, then tap again to stop and save the recording to Documents.
+- Captures are saved in `~/Documents/JoyCon2forMac Captures`.
 - Launchpad is triggered through the macOS Launchpad keyboard event path now, rather than a direct app launch.
 
 ## Troubleshooting
