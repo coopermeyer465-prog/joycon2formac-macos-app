@@ -427,31 +427,21 @@ static NSString* BindingSummaryFromValue(id value) {
     self.batteryStatusBySide = [NSMutableDictionary dictionary];
     self.receiver = [Joycon2BLEReceiver sharedInstance];
     self.hid = [[Joycon2VirtualHID alloc] initWithMode:[self selectedMode] modeOverridden:YES configPath:self.configPath];
-    void (^hidConnected)(void) = [[self.receiver.onConnected copy] autorelease];
-    void (^hidFound)(NSString*, NSString*) = [[self.receiver.onDeviceFound copy] autorelease];
-    void (^hidData)(NSDictionary*) = [[self.receiver.onDataReceived copy] autorelease];
-    void (^hidError)(NSString*) = [[self.receiver.onError copy] autorelease];
 
     __block Joycon2AppDelegate* weakSelf = self;
     self.receiver.onDeviceFound = ^(NSString* name, NSString* address) {
-        if (hidFound) {
-            hidFound(name, address);
-        }
         dispatch_async(dispatch_get_main_queue(), ^{
             weakSelf.statusLabel.stringValue = [NSString stringWithFormat:@"Status: found %@, connecting", name ?: @"Joy-Con 2"];
         });
     };
     self.receiver.onConnected = ^{
-        if (hidConnected) {
-            hidConnected();
-        }
         dispatch_async(dispatch_get_main_queue(), ^{
             weakSelf.statusLabel.stringValue = @"Status: Joy-Con connected, waiting for input";
         });
     };
     self.receiver.onDataReceived = ^(NSDictionary* data) {
-        if (hidData) {
-            hidData(data);
+        if (weakSelf.hid) {
+            [weakSelf.hid sendHIDReportFromJoyconData:data];
         }
 
         NSString* controllerKey = data[@"PeripheralIdentifier"] ?: @"unknown";
@@ -503,9 +493,6 @@ static NSString* BindingSummaryFromValue(id value) {
         });
     };
     self.receiver.onError = ^(NSString* error) {
-        if (hidError) {
-            hidError(error);
-        }
         dispatch_async(dispatch_get_main_queue(), ^{
             weakSelf.statusLabel.stringValue = [NSString stringWithFormat:@"Status: error - %@", error ?: @"unknown"];
         });
@@ -518,6 +505,10 @@ static NSString* BindingSummaryFromValue(id value) {
 }
 
 - (void)stopController {
+    self.receiver.onDeviceFound = nil;
+    self.receiver.onConnected = nil;
+    self.receiver.onDataReceived = nil;
+    self.receiver.onError = nil;
     [self.hid stopEmulation];
     self.hid = nil;
     self.receiver = nil;

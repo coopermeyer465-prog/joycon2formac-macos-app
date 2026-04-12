@@ -1013,8 +1013,12 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return NO;
     }
 
+    if (CGCursorIsVisible()) {
+        return NO;
+    }
+
     double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
-    double normalizedY = ([rightStickY doubleValue] - 2047.0) / 2047.0;
+    double normalizedY = (2047.0 - [rightStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
 
     if (std::fabs(normalizedX) < deadzone) normalizedX = 0.0;
