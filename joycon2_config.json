@@ -21,7 +21,9 @@
   "modeBindings": {
     "mouse": {
       "A": "system:space_click",
-      "B": "system:shift_delete",
+      "B": {
+        "tap": "system:shift_delete"
+      },
       "R": "mouse:left",
       "ZR": "mouse:right",
       "X": "key:f",
@@ -46,7 +48,9 @@
     },
     "hybrid": {
       "A": "system:space_click",
-      "B": "system:shift_delete",
+      "B": {
+        "tap": "system:shift_delete"
+      },
       "R": "mouse:scroll_down",
       "ZR": "mouse:right",
       "X": "key:f",
@@ -71,7 +75,9 @@
     },
     "keyboard": {
       "A": "system:space_click",
-      "B": "system:shift_delete",
+      "B": {
+        "tap": "system:shift_delete"
+      },
       "R": "key:return",
       "ZR": "key:left_control",
       "X": "key:f",

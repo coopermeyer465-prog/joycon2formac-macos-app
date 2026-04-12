@@ -544,7 +544,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     bindPress(_config.mouseBindings, "A", @"system:space_click");
     bindPress(_config.mouseBindings, "R", @"mouse:left");
-    bindPress(_config.mouseBindings, "B", @"system:shift_delete");
+    bindTap(_config.mouseBindings, "B", @"system:shift_delete");
     bindPress(_config.mouseBindings, "ZR", @"mouse:right");
     bindPress(_config.mouseBindings, "X", @"key:f");
     bindPress(_config.mouseBindings, "Y", @"key:e");
@@ -567,7 +567,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.mouseBindings, "CHAT", @"system:discord");
 
     bindPress(_config.hybridBindings, "A", @"system:space_click");
-    bindPress(_config.hybridBindings, "B", @"system:shift_delete");
+    bindTap(_config.hybridBindings, "B", @"system:shift_delete");
     bindPress(_config.hybridBindings, "X", @"key:f");
     bindPress(_config.hybridBindings, "Y", @"key:e");
     bindPress(_config.hybridBindings, "R", @"mouse:scroll_down");
@@ -591,7 +591,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.hybridBindings, "CHAT", @"system:discord");
 
     bindPress(_config.keyboardBindings, "A", @"system:space_click");
-    bindPress(_config.keyboardBindings, "B", @"system:shift_delete");
+    bindTap(_config.keyboardBindings, "B", @"system:shift_delete");
     bindPress(_config.keyboardBindings, "X", @"key:f");
     bindPress(_config.keyboardBindings, "Y", @"key:e");
     bindPress(_config.keyboardBindings, "R", @"key:return");
@@ -710,7 +710,19 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     nextPos.y = fmax(screenBounds.origin.y, fmin(nextPos.y, screenBounds.origin.y + screenBounds.size.height));
 
     CGPoint eventPos = cursorVisible ? nextPos : currentPos;
-    CGEventRef moveEvent = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, eventPos, kCGMouseButtonLeft);
+    CGMouseButton eventButton = kCGMouseButtonLeft;
+    CGEventType eventType = kCGEventMouseMoved;
+    if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft)) {
+        eventType = kCGEventLeftMouseDragged;
+        eventButton = kCGMouseButtonLeft;
+    } else if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight)) {
+        eventType = kCGEventRightMouseDragged;
+        eventButton = kCGMouseButtonRight;
+    } else if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonCenter)) {
+        eventType = kCGEventOtherMouseDragged;
+        eventButton = kCGMouseButtonCenter;
+    }
+    CGEventRef moveEvent = CGEventCreateMouseEvent(NULL, eventType, eventPos, eventButton);
     if (moveEvent) {
         CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
         CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
@@ -1065,10 +1077,6 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return NO;
     }
 
-    if (CGCursorIsVisible()) {
-        return NO;
-    }
-
     double normalizedX = ([rightStickX doubleValue] - 2047.0) / 2047.0;
     double normalizedY = (2047.0 - [rightStickY doubleValue]) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
@@ -1266,11 +1274,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     double normalizedX = ([leftStickX doubleValue] - 2047.0) / 2047.0;
-    double normalizedY = (2047.0 - [leftStickY doubleValue]) / 2047.0;
+    double normalizedY = ([leftStickY doubleValue] - 2047.0) / 2047.0;
     double deadzone = ClampDouble(_config.keyboard.stickDeadzone, 0.0, 0.95);
 
-    bool up = normalizedY > deadzone;
-    bool down = normalizedY < -deadzone;
+    bool up = normalizedY < -deadzone;
+    bool down = normalizedY > deadzone;
     bool left = normalizedX < -deadzone;
     bool right = normalizedX > deadzone;
 
