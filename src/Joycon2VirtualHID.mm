@@ -772,15 +772,17 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
 - (void)openLaunchpad {
     NSTask* task = [[NSTask alloc] init];
-    task.launchPath = @"/usr/bin/osascript";
-    task.arguments = @[@"-e", @"tell application \"System Events\" to key code 160"];
+    task.launchPath = @"/usr/bin/open";
+    task.arguments = @[@"-a", @"Launchpad"];
     [task launch];
     [task waitUntilExit];
     int status = task.terminationStatus;
     [task release];
     if (status != 0) {
-        [self postKeyboardEventForKeyCode:118 down:YES];
-        [self postKeyboardEventForKeyCode:118 down:NO];
+        NSURL* launchpadURL = [NSURL fileURLWithPath:@"/System/Applications/Launchpad.app"];
+        if (launchpadURL) {
+            [[NSWorkspace sharedWorkspace] openURL:launchpadURL];
+        }
     }
 }
 
@@ -836,7 +838,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 - (void)performComboMacro:(BindingMacroKind)macroKind down:(BOOL)down keyboardEnabled:(BOOL)keyboardEnabled mouseEnabled:(BOOL)mouseEnabled {
     switch (macroKind) {
         case BindingMacroKindSpaceClick:
-            if (keyboardEnabled) {
+            if (keyboardEnabled && !CGCursorIsVisible()) {
                 [self postKeyboardEventForKeyCode:49 down:down];
             }
             if (mouseEnabled && CGCursorIsVisible()) {
@@ -1110,7 +1112,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     uint32_t buttons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
     if (self.emulationMode == MODE_MOUSE) {
         const uint32_t mousePrimaryMask = 0x00004000;
-        bool primaryPressed = (buttons & mousePrimaryMask) != 0;
+        NSNumber* triggerRNumber = joyconData[@"TriggerR"];
+        int triggerRValue = triggerRNumber ? [triggerRNumber intValue] : 0;
+        bool shoulderFallbackPressed = triggerRValue > 20 && (buttons & 0x00008000) == 0;
+        bool primaryPressed = (buttons & mousePrimaryMask) != 0 || shoulderFallbackPressed;
         if (primaryPressed != state.mouseModePrimaryPressed) {
             [self postMouseButton:kCGMouseButtonLeft down:primaryPressed];
             state.mouseModePrimaryPressed = primaryPressed;
