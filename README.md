@@ -295,8 +295,8 @@ Examples:
 - Left Joy-Con packets are ignored completely when `enableLeftJoyCon` is `false`.
 - Button bindings still work in hybrid mode for either controller that is allowed by config.
 - Left stick to keyboard is evaluated from left-controller packets, which avoids the right Joy-Con accidentally cancelling stick directions.
-- The screenshot button supports two behaviors by default: tap for a full-screen screenshot in Documents, hold for about 1.5 seconds to start screen recording, then tap again to stop and save the recording to Documents.
-- Launchpad uses the system `open -a Launchpad` path, which is more reliable than treating it like a normal app bundle.
+- The screenshot button supports two behaviors by default: tap for a full-screen screenshot in Documents, hold for about 1 second to start screen recording, then tap again to stop and save the recording to Documents.
+- Launchpad is triggered through the macOS Launchpad keyboard event path now, rather than a direct app launch.
 
 ## Troubleshooting
 
