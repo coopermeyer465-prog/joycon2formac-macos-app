@@ -197,12 +197,13 @@ static NSString* BindingSummaryFromValue(id value) {
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     [self prepareConfig];
     [self loadConfigDocument];
+    [self setupMainMenu];
     [self buildWindow];
     [self startController];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
-    return YES;
+    return NO;
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
@@ -296,6 +297,10 @@ static NSString* BindingSummaryFromValue(id value) {
 }
 
 - (void)buildWindow {
+    if (self.window) {
+        return;
+    }
+
     NSRect frame = NSMakeRect(0, 0, 820, 640);
     self.window = [[NSWindow alloc] initWithContentRect:frame
                                               styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable)
@@ -377,8 +382,59 @@ static NSString* BindingSummaryFromValue(id value) {
     [controls setUsesSingleLineMode:NO];
     [contentView addSubview:controls];
 
-    [self.window makeKeyAndOrderFront:nil];
     [self.bindingsTable reloadData];
+}
+
+- (void)setupMainMenu {
+    NSString* appName = [[NSProcessInfo processInfo] processName];
+
+    NSMenu* mainMenu = [[NSMenu alloc] initWithTitle:@""];
+    NSMenuItem* appMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+    [mainMenu addItem:appMenuItem];
+
+    NSMenu* appMenu = [[NSMenu alloc] initWithTitle:appName];
+    NSMenuItem* reconfigureItem = [[NSMenuItem alloc] initWithTitle:@"Reconfigure / Remap..."
+                                                             action:@selector(showConfigurationWindow:)
+                                                      keyEquivalent:@","];
+    [reconfigureItem setTarget:self];
+    [appMenu addItem:reconfigureItem];
+    [reconfigureItem release];
+
+    NSMenuItem* configFolderItem = [[NSMenuItem alloc] initWithTitle:@"Open Config Folder"
+                                                              action:@selector(openConfigFolder:)
+                                                       keyEquivalent:@""];
+    [configFolderItem setTarget:self];
+    [appMenu addItem:configFolderItem];
+    [configFolderItem release];
+
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* quitItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Quit %@", appName]
+                                                      action:@selector(terminate:)
+                                               keyEquivalent:@"q"];
+    [appMenu addItem:quitItem];
+    [quitItem release];
+
+    [appMenuItem setSubmenu:appMenu];
+    [appMenu release];
+    [appMenuItem release];
+
+    [NSApp setMainMenu:mainMenu];
+    [mainMenu release];
+}
+
+- (void)showConfigurationWindow:(id)sender {
+    [self buildWindow];
+    [self refreshBindingsTable];
+    [self.window makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)sender hasVisibleWindows:(BOOL)flag {
+    if (!flag) {
+        [self showConfigurationWindow:nil];
+    }
+    return YES;
 }
 
 - (NSTextField*)labelWithFrame:(NSRect)frame text:(NSString*)text font:(NSFont*)font {
