@@ -183,7 +183,7 @@ publish_release() {
     local zip_path
     local dmg_path
     local repo
-    local draft_flag=()
+    local draft_flag=""
     local notes_args=()
 
     if ! command -v gh >/dev/null 2>&1; then
@@ -201,7 +201,7 @@ publish_release() {
     build_dist
 
     if [[ "$RELEASE_DRAFT" == "true" ]]; then
-        draft_flag=(--draft)
+        draft_flag="--draft"
     fi
 
     if [[ -n "$RELEASE_NOTES_FILE" ]]; then
@@ -213,10 +213,18 @@ publish_release() {
     if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
         echo "Updating existing GitHub release $tag..."
         gh release upload "$tag" "$zip_path" "$dmg_path" --clobber --repo "$repo"
-        gh release edit "$tag" --title "$title" "${draft_flag[@]}" --repo "$repo"
+        if [[ -n "$draft_flag" ]]; then
+            gh release edit "$tag" --title "$title" "$draft_flag" --repo "$repo"
+        else
+            gh release edit "$tag" --title "$title" --repo "$repo"
+        fi
     else
         echo "Creating GitHub release $tag..."
-        gh release create "$tag" "$zip_path" "$dmg_path" --title "$title" "${notes_args[@]}" "${draft_flag[@]}" --repo "$repo"
+        if [[ -n "$draft_flag" ]]; then
+            gh release create "$tag" "$zip_path" "$dmg_path" --title "$title" "${notes_args[@]}" "$draft_flag" --repo "$repo"
+        else
+            gh release create "$tag" "$zip_path" "$dmg_path" --title "$title" "${notes_args[@]}" --repo "$repo"
+        fi
     fi
 
     echo "GitHub release ready:"
