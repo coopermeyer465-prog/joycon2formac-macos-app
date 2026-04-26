@@ -831,12 +831,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!event) {
         return;
     }
-    CGEventPost(kCGHIDEventTap, event);
-    CGEventRef copy = CGEventCreateCopy(event);
-    if (copy) {
-        CGEventPost(kCGSessionEventTap, copy);
-        CFRelease(copy);
-    }
+    CGEventPost(kCGSessionEventTap, event);
 }
 
 - (void)postSystemKey:(int64_t)key down:(BOOL)down {
