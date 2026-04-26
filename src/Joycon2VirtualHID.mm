@@ -37,6 +37,7 @@ typedef NS_ENUM(NSInteger, BindingMacroKind) {
 
 struct MouseConfig {
     double sensitivity = 0.35;
+    double rightStickSensitivity = 0.35;
     double deadzone = 2.0;
     double smoothing = 0.6;
     double maxStep = 45.0;
@@ -541,6 +542,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     NSDictionary* mouse = root[@"mouse"];
     if ([mouse isKindOfClass:[NSDictionary class]]) {
         NSNumber* sensitivity = mouse[@"sensitivity"];
+        NSNumber* rightStickSensitivity = mouse[@"rightStickSensitivity"];
         NSNumber* deadzone = mouse[@"deadzone"];
         NSNumber* smoothing = mouse[@"smoothing"];
         NSNumber* maxStep = mouse[@"maxStep"];
@@ -550,6 +552,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         NSNumber* invertY = mouse[@"invertY"];
         NSNumber* scrollStep = mouse[@"scrollStep"];
         if ([sensitivity isKindOfClass:[NSNumber class]]) _config.mouse.sensitivity = [sensitivity doubleValue];
+        if ([rightStickSensitivity isKindOfClass:[NSNumber class]]) {
+            _config.mouse.rightStickSensitivity = [rightStickSensitivity doubleValue];
+        } else if ([sensitivity isKindOfClass:[NSNumber class]]) {
+            _config.mouse.rightStickSensitivity = [sensitivity doubleValue];
+        }
         if ([deadzone isKindOfClass:[NSNumber class]]) _config.mouse.deadzone = [deadzone doubleValue];
         if ([smoothing isKindOfClass:[NSNumber class]]) _config.mouse.smoothing = [smoothing doubleValue];
         if ([maxStep isKindOfClass:[NSNumber class]]) _config.mouse.maxStep = [maxStep doubleValue];
@@ -1447,8 +1454,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return NO;
     }
 
-    double scale = std::max(10.0, _config.mouse.maxStep * 0.85);
-    scale *= 0.12;
+    double scale = std::max(0.1, _config.mouse.rightStickSensitivity) * 12.0;
     double deltaX = normalizedX * scale;
     double deltaY = normalizedY * scale;
 

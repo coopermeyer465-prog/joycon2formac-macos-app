@@ -180,6 +180,8 @@ static NSString* BindingSummaryFromValue(id value) {
 @property (strong, nonatomic) NSTextField* statusLabel;
 @property (strong, nonatomic) NSButton* toggleButton;
 @property (strong, nonatomic) NSTextField* configPathLabel;
+@property (strong, nonatomic) NSTextField* mouseSensitivityField;
+@property (strong, nonatomic) NSTextField* rightStickSensitivityField;
 @property (strong, nonatomic) NSTableView* bindingsTable;
 @property (strong, nonatomic) Joycon2BLEReceiver* receiver;
 @property (strong, nonatomic) Joycon2VirtualHID* hid;
@@ -272,6 +274,7 @@ static NSString* BindingSummaryFromValue(id value) {
     if (![self.configDocument[@"modeBindings"] isKindOfClass:[NSDictionary class]]) {
         self.configDocument[@"modeBindings"] = [NSMutableDictionary dictionary];
     }
+    [self refreshSensitivityControls];
 }
 
 - (NSInteger)estimatedBatteryPercentFromVoltage:(double)voltage {
@@ -313,6 +316,41 @@ static NSString* BindingSummaryFromValue(id value) {
         modeBindings[modeKey] = current;
     }
     return (NSMutableDictionary*)current;
+}
+
+- (NSMutableDictionary*)mutableMouseConfig {
+    id mouse = self.configDocument[@"mouse"];
+    if (![mouse isKindOfClass:[NSDictionary class]]) {
+        mouse = [NSMutableDictionary dictionary];
+        self.configDocument[@"mouse"] = mouse;
+    } else if (![mouse isKindOfClass:[NSMutableDictionary class]]) {
+        mouse = [NSMutableDictionary dictionaryWithDictionary:mouse];
+        self.configDocument[@"mouse"] = mouse;
+    }
+    return (NSMutableDictionary*)mouse;
+}
+
+- (double)configuredMouseSensitivity {
+    NSNumber* value = [self mutableMouseConfig][@"sensitivity"];
+    return [value isKindOfClass:[NSNumber class]] ? [value doubleValue] : 0.35;
+}
+
+- (double)configuredRightStickSensitivity {
+    NSMutableDictionary* mouse = [self mutableMouseConfig];
+    NSNumber* value = mouse[@"rightStickSensitivity"];
+    if ([value isKindOfClass:[NSNumber class]]) {
+        return [value doubleValue];
+    }
+    NSNumber* fallback = mouse[@"sensitivity"];
+    return [fallback isKindOfClass:[NSNumber class]] ? [fallback doubleValue] : 0.35;
+}
+
+- (void)refreshSensitivityControls {
+    if (!self.mouseSensitivityField || !self.rightStickSensitivityField) {
+        return;
+    }
+    self.mouseSensitivityField.stringValue = [NSString stringWithFormat:@"%.2f", [self configuredMouseSensitivity]];
+    self.rightStickSensitivityField.stringValue = [NSString stringWithFormat:@"%.2f", [self configuredRightStickSensitivity]];
 }
 
 - (void)buildWindow {
@@ -369,6 +407,29 @@ static NSString* BindingSummaryFromValue(id value) {
     [openConfigButton setAction:@selector(openConfigFolder:)];
     [contentView addSubview:openConfigButton];
 
+    NSTextField* mouseSensitivityLabel = [self labelWithFrame:NSMakeRect(24, 482, 150, 22)
+                                                         text:@"Mouse Sensitivity"
+                                                         font:[NSFont systemFontOfSize:12]];
+    [contentView addSubview:mouseSensitivityLabel];
+
+    self.mouseSensitivityField = [[[NSTextField alloc] initWithFrame:NSMakeRect(176, 478, 80, 24)] autorelease];
+    [contentView addSubview:self.mouseSensitivityField];
+
+    NSTextField* rightStickSensitivityLabel = [self labelWithFrame:NSMakeRect(274, 482, 170, 22)
+                                                              text:@"Right Stick Sensitivity"
+                                                              font:[NSFont systemFontOfSize:12]];
+    [contentView addSubview:rightStickSensitivityLabel];
+
+    self.rightStickSensitivityField = [[[NSTextField alloc] initWithFrame:NSMakeRect(444, 478, 80, 24)] autorelease];
+    [contentView addSubview:self.rightStickSensitivityField];
+
+    NSButton* applySensitivityButton = [[NSButton alloc] initWithFrame:NSMakeRect(542, 476, 130, 28)];
+    [applySensitivityButton setBezelStyle:NSBezelStyleRounded];
+    [applySensitivityButton setTitle:@"Apply Sensitivity"];
+    [applySensitivityButton setTarget:self];
+    [applySensitivityButton setAction:@selector(applySensitivitySettings:)];
+    [contentView addSubview:applySensitivityButton];
+
     self.configPathLabel = [self labelWithFrame:NSMakeRect(24, 438, 760, 32)
                                            text:[NSString stringWithFormat:@"Config: %@", self.configPath]
                                            font:[NSFont systemFontOfSize:11]];
@@ -402,6 +463,7 @@ static NSString* BindingSummaryFromValue(id value) {
     [controls setUsesSingleLineMode:NO];
     [contentView addSubview:controls];
 
+    [self refreshSensitivityControls];
     [self.bindingsTable reloadData];
 }
 
@@ -844,11 +906,28 @@ static NSString* BindingSummaryFromValue(id value) {
     NSData* data = [NSJSONSerialization dataWithJSONObject:self.configDocument options:NSJSONWritingPrettyPrinted error:nil];
     [data writeToFile:self.configPath atomically:YES];
     [self loadConfigDocument];
+    [self refreshSensitivityControls];
     [self refreshBindingsTable];
     if (self.running) {
         [self stopController];
         [self startController];
     }
+}
+
+- (void)applySensitivitySettings:(id)sender {
+    double mouseSensitivity = [self.mouseSensitivityField doubleValue];
+    double rightStickSensitivity = [self.rightStickSensitivityField doubleValue];
+    if (mouseSensitivity <= 0.0 || rightStickSensitivity <= 0.0) {
+        self.statusLabel.stringValue = @"Status: sensitivity values must be greater than 0";
+        [self refreshSensitivityControls];
+        return;
+    }
+
+    NSMutableDictionary* mouse = [self mutableMouseConfig];
+    mouse[@"sensitivity"] = @(mouseSensitivity);
+    mouse[@"rightStickSensitivity"] = @(rightStickSensitivity);
+    [self saveConfigDocumentAndRestartIfNeeded];
+    self.statusLabel.stringValue = [NSString stringWithFormat:@"Status: updated sensitivities (mouse %.2f, right stick %.2f)", mouseSensitivity, rightStickSensitivity];
 }
 
 - (void)applyPressAction:(NSString*)pressAction tapAction:(NSString*)tapAction forButton:(NSString*)buttonName {

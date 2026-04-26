@@ -107,6 +107,7 @@ The app window starts scanning automatically, shows discovery/connection/input s
 - `Press / Hold` means a quick tap triggers the same output once, while holding the Joy-Con button keeps that output held
 - if you choose a keyboard action, press the Mac key you want to bind
 - if you choose a mouse or system action, pick it from the popup
+- use the two sensitivity fields in the app window to change mouse-sensor and right-stick cursor sensitivity without editing JSON by hand
 
 Mouse-only mode:
 
@@ -179,6 +180,7 @@ Example:
   "enableLeftJoyCon": true,
   "mouse": {
     "sensitivity": 0.35,
+    "rightStickSensitivity": 0.35,
     "deadzone": 2.0,
     "smoothing": 0.6,
     "maxStep": 45.0,
@@ -241,6 +243,7 @@ Example:
 - `configVersion`: built-in config schema version used by the app for safe upgrades
 - `enableLeftJoyCon`: `true` or `false`
 - `mouse.sensitivity`: cursor scale factor
+- `mouse.rightStickSensitivity`: cursor scale factor for right-stick mouse control
 - `mouse.deadzone`: ignore tiny sensor deltas
 - `mouse.smoothing`: keeps some previous motion to reduce jitter
 - `mouse.maxStep`: caps large per-packet cursor jumps

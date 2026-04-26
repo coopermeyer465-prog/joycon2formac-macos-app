@@ -4,6 +4,7 @@
   "enableLeftJoyCon": true,
   "mouse": {
     "sensitivity": 0.35,
+    "rightStickSensitivity": 0.35,
     "deadzone": 2.0,
     "smoothing": 0.6,
     "maxStep": 45.0,
