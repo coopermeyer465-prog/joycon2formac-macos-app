@@ -14,6 +14,8 @@ APP_ENTITLEMENTS="Joycon2forMac.entitlements"
 CONFIG_FILE="joycon2_config.json"
 DIST_DIR="dist"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+RELEASE_DRAFT="${RELEASE_DRAFT:-false}"
+RELEASE_NOTES_FILE="${RELEASE_NOTES_FILE:-}"
 
 mkdir -p build
 
@@ -28,6 +30,20 @@ fi
 
 bundle_version() {
     /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_INFO_PLIST" 2>/dev/null || echo "1.0"
+}
+
+repo_slug() {
+    local remote_url
+    remote_url="$(git config --get remote.origin.url 2>/dev/null || true)"
+    if [[ -z "$remote_url" ]]; then
+        return 1
+    fi
+
+    remote_url="${remote_url%.git}"
+    remote_url="${remote_url#git@github.com:}"
+    remote_url="${remote_url#https://github.com/}"
+    remote_url="${remote_url#http://github.com/}"
+    echo "$remote_url"
 }
 
 sign_app_bundle() {
@@ -160,6 +176,53 @@ EOF
     echo "  $package_root/INSTALL.txt"
 }
 
+publish_release() {
+    local version
+    local tag
+    local title
+    local zip_path
+    local dmg_path
+    local repo
+    local draft_flag=()
+    local notes_args=()
+
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "gh CLI is required for RELEASE mode."
+        exit 1
+    fi
+
+    version="$(bundle_version)"
+    tag="v${version}"
+    title="${APP_NAME} ${version}"
+    zip_path="$DIST_DIR/${APP_NAME}-${version}-macOS.zip"
+    dmg_path="$DIST_DIR/${APP_NAME}-${version}-macOS.dmg"
+    repo="$(repo_slug)"
+
+    build_dist
+
+    if [[ "$RELEASE_DRAFT" == "true" ]]; then
+        draft_flag=(--draft)
+    fi
+
+    if [[ -n "$RELEASE_NOTES_FILE" ]]; then
+        notes_args=(--notes-file "$RELEASE_NOTES_FILE")
+    else
+        notes_args=(--generate-notes)
+    fi
+
+    if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+        echo "Updating existing GitHub release $tag..."
+        gh release upload "$tag" "$zip_path" "$dmg_path" --clobber --repo "$repo"
+        gh release edit "$tag" --title "$title" "${draft_flag[@]}" --repo "$repo"
+    else
+        echo "Creating GitHub release $tag..."
+        gh release create "$tag" "$zip_path" "$dmg_path" --title "$title" "${notes_args[@]}" "${draft_flag[@]}" --repo "$repo"
+    fi
+
+    echo "GitHub release ready:"
+    echo "  https://github.com/${repo}/releases/tag/${tag}"
+}
+
 case "$BUILD_MODE" in
     FULL)
         build_full_binary
@@ -173,8 +236,11 @@ case "$BUILD_MODE" in
     DIST)
         build_dist
         ;;
+    RELEASE)
+        publish_release
+        ;;
     *)
-        echo "Invalid BUILD_MODE: $BUILD_MODE. Use FULL, APP, DIST or BLE_ONLY."
+        echo "Invalid BUILD_MODE: $BUILD_MODE. Use FULL, APP, DIST, RELEASE or BLE_ONLY."
         exit 1
         ;;
 esac

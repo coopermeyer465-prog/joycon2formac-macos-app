@@ -71,6 +71,12 @@ Build the shareable release artifacts:
 ./build.sh DIST release
 ```
 
+Build and publish a GitHub Release from the current commit:
+
+```bash
+./build.sh RELEASE release
+```
+
 Build the BLE parser only:
 
 ```bash
@@ -111,6 +117,18 @@ That produces:
 - a signed `.app` bundle in `build/JoyCon2forMac.app`
 - a drag-and-drop `.dmg` in `dist/`
 - a `.zip` release archive in `dist/`
+
+To push those artifacts straight to GitHub Releases:
+
+```bash
+./build.sh RELEASE release
+```
+
+Optional release environment variables:
+
+- `CODESIGN_IDENTITY="Developer ID Application: Your Name"` to use a real signing identity
+- `RELEASE_DRAFT=true` to create or keep the GitHub Release as a draft
+- `RELEASE_NOTES_FILE=/absolute/path/to/notes.md` to use custom release notes instead of GitHub-generated notes
 
 Install flow for another Mac:
 
