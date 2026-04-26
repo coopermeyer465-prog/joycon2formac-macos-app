@@ -182,6 +182,7 @@ static NSString* BindingSummaryFromValue(id value) {
 @property (strong, nonatomic) NSTableView* bindingsTable;
 @property (strong, nonatomic) Joycon2BLEReceiver* receiver;
 @property (strong, nonatomic) Joycon2VirtualHID* hid;
+@property (strong, nonatomic) NSStatusItem* statusItem;
 @property (copy, nonatomic) NSString* configPath;
 @property (strong, nonatomic) NSMutableSet* activeControllers;
 @property (strong, nonatomic) NSMutableDictionary* configDocument;
@@ -198,8 +199,10 @@ static NSString* BindingSummaryFromValue(id value) {
     [self prepareConfig];
     [self loadConfigDocument];
     [self setupMainMenu];
+    [self setupStatusItem];
     [self buildWindow];
     [self startController];
+    [self enterBackgroundMode];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
@@ -424,7 +427,46 @@ static NSString* BindingSummaryFromValue(id value) {
     [mainMenu release];
 }
 
+- (void)setupStatusItem {
+    self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+    if (self.statusItem.button) {
+        [self.statusItem.button setTitle:@"JoyCon2forMac"];
+    }
+
+    NSMenu* statusMenu = [[NSMenu alloc] initWithTitle:@"JoyCon2forMac"];
+    NSMenuItem* reconfigureItem = [[NSMenuItem alloc] initWithTitle:@"Reconfigure / Remap..."
+                                                             action:@selector(showConfigurationWindow:)
+                                                      keyEquivalent:@""];
+    [reconfigureItem setTarget:self];
+    [statusMenu addItem:reconfigureItem];
+    [reconfigureItem release];
+
+    NSMenuItem* configFolderItem = [[NSMenuItem alloc] initWithTitle:@"Open Config Folder"
+                                                              action:@selector(openConfigFolder:)
+                                                       keyEquivalent:@""];
+    [configFolderItem setTarget:self];
+    [statusMenu addItem:configFolderItem];
+    [configFolderItem release];
+
+    [statusMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit JoyCon2forMac"
+                                                      action:@selector(terminate:)
+                                               keyEquivalent:@""];
+    [statusMenu addItem:quitItem];
+    [quitItem release];
+
+    [self.statusItem setMenu:statusMenu];
+    [statusMenu release];
+}
+
+- (void)enterBackgroundMode {
+    [self.window orderOut:nil];
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+}
+
 - (void)showConfigurationWindow:(id)sender {
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [self buildWindow];
     [self refreshBindingsTable];
     [self.window makeKeyAndOrderFront:nil];
@@ -439,7 +481,7 @@ static NSString* BindingSummaryFromValue(id value) {
 }
 
 - (BOOL)windowShouldClose:(id)sender {
-    [self.window orderOut:nil];
+    [self enterBackgroundMode];
     return NO;
 }
 
@@ -844,9 +886,8 @@ int main(int argc, const char * argv[]) {
     @autoreleasepool {
         NSApplication* app = [NSApplication sharedApplication];
         Joycon2AppDelegate* delegate = [[Joycon2AppDelegate alloc] init];
-        [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+        [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
         [app setDelegate:delegate];
-        [app activateIgnoringOtherApps:YES];
         [app run];
     }
     return 0;
