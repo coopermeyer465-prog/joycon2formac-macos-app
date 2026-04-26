@@ -174,7 +174,7 @@ static NSString* BindingSummaryFromValue(id value) {
     return parts.count > 0 ? [parts componentsJoinedByString:@" | "] : @"Not set";
 }
 
-@interface Joycon2AppDelegate : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate>
+@interface Joycon2AppDelegate : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate>
 @property (strong, nonatomic) NSWindow* window;
 @property (strong, nonatomic) NSTextField* statusLabel;
 @property (strong, nonatomic) NSButton* toggleButton;
@@ -308,6 +308,7 @@ static NSString* BindingSummaryFromValue(id value) {
                                                   defer:NO];
     [self.window center];
     [self.window setTitle:@"JoyCon2 for Mac"];
+    [self.window setDelegate:self];
 
     NSView* contentView = self.window.contentView;
 
@@ -435,6 +436,11 @@ static NSString* BindingSummaryFromValue(id value) {
         [self showConfigurationWindow:nil];
     }
     return YES;
+}
+
+- (BOOL)windowShouldClose:(id)sender {
+    [self.window orderOut:nil];
+    return NO;
 }
 
 - (NSTextField*)labelWithFrame:(NSRect)frame text:(NSString*)text font:(NSFont*)font {
