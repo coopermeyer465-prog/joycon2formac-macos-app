@@ -65,6 +65,12 @@ Build the distributable macOS app bundle:
 ./build.sh APP release
 ```
 
+Build the shareable release artifacts:
+
+```bash
+./build.sh DIST release
+```
+
 Build the BLE parser only:
 
 ```bash
@@ -76,12 +82,48 @@ Build outputs:
 - `build/Joycon2VirtualHID`
 - `build/JoyCon2forMac.app`
 - `build/Joycon2BLEReceiver`
+- `dist/JoyCon2forMac-<version>-macOS.zip`
+- `dist/JoyCon2forMac-<version>-macOS.dmg`
+- `dist/JoyCon2forMac-<version>/INSTALL.txt`
 
 ## Download
 
 - Source ZIP: [main.zip](https://github.com/coopermeyer465-prog/joycon2formac-macos-app/archive/refs/heads/main.zip)
 - Repository page: [coopermeyer465-prog/joycon2formac-macos-app](https://github.com/coopermeyer465-prog/joycon2formac-macos-app)
 - Releases page: [GitHub Releases](https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases)
+
+## Distributable App
+
+For a normal Mac app handoff, use:
+
+```bash
+./build.sh DIST release
+```
+
+If you have a real Apple signing identity installed, you can use it instead of ad-hoc signing:
+
+```bash
+CODESIGN_IDENTITY="Developer ID Application: Your Name" ./build.sh DIST release
+```
+
+That produces:
+
+- a signed `.app` bundle in `build/JoyCon2forMac.app`
+- a drag-and-drop `.dmg` in `dist/`
+- a `.zip` release archive in `dist/`
+
+Install flow for another Mac:
+
+1. Open the `.dmg`.
+2. Drag `JoyCon2forMac.app` into `Applications`.
+3. Open it from `Applications`.
+4. Grant Bluetooth and Accessibility when macOS asks.
+
+Current release limitation:
+
+- the app is ad-hoc signed locally for easier packaging
+- it is not Developer ID notarized yet, so Gatekeeper may still warn on other Macs
+- a fully polished public release would need Apple Developer signing + notarization
 
 ## Run
 
@@ -96,10 +138,10 @@ Hybrid mode:
 App bundle:
 
 ```bash
-open /Users/marissameyer/Desktop/Joycon2forMac-publish/build/JoyCon2forMac.app
+open /Users/marissameyer/Desktop/Joycon2forMac/Joycon2forMac-publish/build/JoyCon2forMac.app
 ```
 
-The app window starts scanning automatically, shows discovery/connection/input status, and includes a capture-based mapper:
+The app starts scanning automatically, even if its config window is hidden. The app window includes a capture-based mapper:
 
 - click `Map Joy-Con Button`
 - press the Joy-Con button you want to edit
