@@ -29,7 +29,7 @@ fi
     APP_DIR="build/JoyCon2forMac.app"
     mkdir -p "$APP_DIR/Contents/MacOS"
     mkdir -p "$APP_DIR/Contents/Resources"
-    clang++ -std=c++17 -x objective-c++ $DEBUG_FLAG -framework Foundation -framework AppKit -framework IOKit -framework CoreBluetooth -framework ApplicationServices -Iinclude src/Joycon2App.mm src/Joycon2VirtualHID.mm src/Joycon2BLEReceiver.mm -o "$APP_DIR/Contents/MacOS/JoyCon2forMac"
+    clang++ -std=c++17 -x objective-c++ $DEBUG_FLAG -framework Foundation -framework AppKit -framework IOKit -framework CoreBluetooth -framework ApplicationServices -framework ServiceManagement -Iinclude src/Joycon2App.mm src/Joycon2VirtualHID.mm src/Joycon2BLEReceiver.mm -o "$APP_DIR/Contents/MacOS/JoyCon2forMac"
     cp Joycon2forMac-App-Info.plist "$APP_DIR/Contents/Info.plist"
     cp joycon2_config.json "$APP_DIR/Contents/Resources/joycon2_config.json"
     elif [ "$BUILD_MODE" = "BLE_ONLY" ]; then

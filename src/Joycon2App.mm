@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <ServiceManagement/ServiceManagement.h>
 
 #import "../include/Joycon2BLEReceiver.h"
 #import "../include/Joycon2VirtualHID.h"
@@ -195,6 +196,20 @@ static NSString* BindingSummaryFromValue(id value) {
 
 @implementation Joycon2AppDelegate
 
+- (void)enableLaunchAtLoginIfPossible {
+    if (@available(macOS 13.0, *)) {
+        SMAppService* service = [SMAppService mainAppService];
+        if (service.status == SMAppServiceStatusEnabled || service.status == SMAppServiceStatusRequiresApproval) {
+            return;
+        }
+
+        NSError* error = nil;
+        if (![service registerAndReturnError:&error] && error) {
+            NSLog(@"Launch-at-login registration failed: %@", error);
+        }
+    }
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     [self prepareConfig];
     [self loadConfigDocument];
@@ -202,6 +217,7 @@ static NSString* BindingSummaryFromValue(id value) {
     [self setupStatusItem];
     [self buildWindow];
     [self startController];
+    [self enableLaunchAtLoginIfPossible];
     [self enterBackgroundMode];
 }
 
