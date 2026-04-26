@@ -82,8 +82,10 @@ struct RuntimeConfig {
 };
 
 struct DeviceState {
+    uint32_t lastRawButtons = 0;
     uint32_t lastButtons = 0;
     bool mouseModePrimaryPressed = false;
+    bool hybridMousePrimaryPressed = false;
     bool hasMouseSample = false;
     int16_t lastMouseX = 0;
     int16_t lastMouseY = 0;
@@ -93,6 +95,7 @@ struct DeviceState {
     double driftBiasY = 0.0;
     double smoothedRightStickX = 0.0;
     double smoothedRightStickY = 0.0;
+    CFAbsoluteTime lastMouseIntentAt = 0.0;
     CFAbsoluteTime calibrationEndsAt = 0.0;
     CFAbsoluteTime screenshotPressedAt = 0.0;
     bool screenshotHoldTriggered = false;
@@ -1191,9 +1194,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         if (state.stickDown) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 125 : 1) down:NO];
         if (state.stickLeft) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 123 : 0) down:NO];
         if (state.stickRight) [self postKeyboardEventForKeyCode:(_config.keyboard.leftStickMode == "arrows" ? 124 : 2) down:NO];
+        if (state.hybridMousePrimaryPressed) {
+            [self postMouseButton:kCGMouseButtonLeft down:NO];
+        }
 
         state.lastButtons = 0;
+        state.lastRawButtons = 0;
         state.mouseModePrimaryPressed = false;
+        state.hybridMousePrimaryPressed = false;
         state.buttonPressedAt.clear();
         state.stickUp = false;
         state.stickDown = false;
@@ -1238,7 +1246,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     NSNumber* buttonsNumber = joyconData[@"Buttons"];
-    uint32_t buttons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
+    uint32_t rawButtons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
+    uint32_t buttons = rawButtons;
     if (self.emulationMode == MODE_MOUSE) {
         const uint32_t mousePrimaryMask = 0x00004000;
         const uint32_t mousePrimaryFallbackMask = 0x00001000;
@@ -1255,7 +1264,47 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         buttons &= ~mousePrimaryMask;
         buttons &= ~mousePrimaryFallbackMask;
     }
+    if (self.emulationMode == MODE_HYBRID && (deviceType == "R" || deviceType == "Unknown")) {
+        CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+        const uint32_t aMask = 0x00000800;
+        const uint32_t rMask = 0x00004000;
+        bool aWasPressed = (state.lastRawButtons & aMask) != 0;
+        bool aIsPressed = (rawButtons & aMask) != 0;
+        bool rWasPressed = (state.lastRawButtons & rMask) != 0;
+        bool rIsPressed = (rawButtons & rMask) != 0;
+        bool mouseContextActive = (state.lastMouseIntentAt > 0.0) && ((now - state.lastMouseIntentAt) <= 1.0);
+
+        if (aIsPressed && !aWasPressed) {
+            auto lastTapIt = state.lastTapActionAt.find(aMask);
+            double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
+            if (elapsedSinceLastTap >= 0.35) {
+                [self postKeyboardEventForKeyCode:49 down:YES];
+                [self postKeyboardEventForKeyCode:49 down:NO];
+                if (!mouseContextActive) {
+                    [self postMouseButton:kCGMouseButtonLeft down:YES];
+                    [self postMouseButton:kCGMouseButtonLeft down:NO];
+                }
+                state.lastTapActionAt[aMask] = now;
+            }
+        }
+
+        if (rIsPressed && !rWasPressed) {
+            if (mouseContextActive) {
+                [self postMouseButton:kCGMouseButtonLeft down:YES];
+                state.hybridMousePrimaryPressed = true;
+            } else {
+                [self postScrollX:0 scrollY:-_config.mouse.scrollStep];
+            }
+        } else if (!rIsPressed && rWasPressed && state.hybridMousePrimaryPressed) {
+            [self postMouseButton:kCGMouseButtonLeft down:NO];
+            state.hybridMousePrimaryPressed = false;
+        }
+
+        buttons &= ~aMask;
+        buttons &= ~rMask;
+    }
     [self processButtonBindings:buttons state:state keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+    state.lastRawButtons = rawButtons;
 
     if (leftStickEnabled && (deviceType == "L" || deviceType == "Unknown")) {
         [self processLeftStickFromData:joyconData state:state];
@@ -1275,6 +1324,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     int16_t mouseY = (int16_t)[mouseYNumber intValue];
 
     if (rightStickMoved) {
+        state.lastMouseIntentAt = CFAbsoluteTimeGetCurrent();
         state.lastMouseX = mouseX;
         state.lastMouseY = mouseY;
         state.hasMouseSample = true;
@@ -1355,6 +1405,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     deltaX = ClampDouble(deltaX, -_config.mouse.maxStep, _config.mouse.maxStep);
     deltaY = ClampDouble(deltaY, -_config.mouse.maxStep, _config.mouse.maxStep);
 
+    state.lastMouseIntentAt = now;
     [self moveCursorByDeltaX:deltaX deltaY:deltaY];
 }
 
@@ -1401,6 +1452,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     double deltaX = normalizedX * scale;
     double deltaY = normalizedY * scale;
 
+    state.lastMouseIntentAt = CFAbsoluteTimeGetCurrent();
     [self moveCursorByDeltaX:deltaX deltaY:deltaY];
     return YES;
 }
