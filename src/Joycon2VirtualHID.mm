@@ -608,7 +608,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _config.keyboardBindings.clear();
     _config.hybridBindings.clear();
 
-    bindTap(_config.mouseBindings, "A", @"system:space_click");
+    bindTap(_config.mouseBindings, "A", @"key:space");
     bindPress(_config.mouseBindings, "R", @"mouse:left");
     bindTap(_config.mouseBindings, "B", @"system:shift_delete");
     bindPress(_config.mouseBindings, "ZR", @"mouse:right");
@@ -635,6 +635,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindTap(_config.hybridBindings, "B", @"system:shift_delete");
     bindPress(_config.hybridBindings, "X", @"key:f");
     bindPress(_config.hybridBindings, "Y", @"key:e");
+    bindPress(_config.hybridBindings, "R", @"mouse:scroll_down");
     bindPress(_config.hybridBindings, "ZR", @"mouse:right");
     bindPress(_config.hybridBindings, "L", @"mouse:scroll_up");
     bindPress(_config.hybridBindings, "ZL", @"mouse:left");
@@ -657,7 +658,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindTap(_config.keyboardBindings, "B", @"system:shift_delete");
     bindPress(_config.keyboardBindings, "X", @"key:f");
     bindPress(_config.keyboardBindings, "Y", @"key:e");
-    bindPress(_config.keyboardBindings, "R", @"key:return");
+    bindPress(_config.keyboardBindings, "R", @"mouse:scroll_down");
     bindPress(_config.keyboardBindings, "ZR", @"key:left_control");
     bindPress(_config.keyboardBindings, "L", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "ZL", @"mouse:scroll_down");
