@@ -621,11 +621,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindTap(_config.mouseBindings, "A", @"key:space");
     bindPress(_config.mouseBindings, "R", @"mouse:left");
     bindTap(_config.mouseBindings, "B", @"system:shift_delete");
-    bindPress(_config.mouseBindings, "ZR", @"mouse:right");
+    bindPress(_config.mouseBindings, "ZR", @"mouse:left");
     bindPress(_config.mouseBindings, "X", @"key:f");
     bindPress(_config.mouseBindings, "Y", @"key:e");
     bindPress(_config.mouseBindings, "L", @"mouse:scroll_up");
-    bindPress(_config.mouseBindings, "ZL", @"mouse:scroll_down");
+    bindPress(_config.mouseBindings, "ZL", @"mouse:right");
     bindPress(_config.mouseBindings, "UP", @"system:pov");
     bindPress(_config.mouseBindings, "DOWN", @"key:q");
     bindTap(_config.mouseBindings, "LEFT", @"key:left_arrow");
@@ -641,14 +641,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.mouseBindings, "CAMERA", @"system:screenshot");
     bindPress(_config.mouseBindings, "CHAT", @"system:discord");
 
-    bindTap(_config.hybridBindings, "A", @"system:space_click");
+    bindTap(_config.hybridBindings, "A", @"key:space");
     bindTap(_config.hybridBindings, "B", @"system:shift_delete");
     bindPress(_config.hybridBindings, "X", @"key:f");
     bindPress(_config.hybridBindings, "Y", @"key:e");
     bindPress(_config.hybridBindings, "R", @"mouse:scroll_down");
-    bindPress(_config.hybridBindings, "ZR", @"mouse:right");
+    bindPress(_config.hybridBindings, "ZR", @"mouse:left");
     bindPress(_config.hybridBindings, "L", @"mouse:scroll_up");
-    bindPress(_config.hybridBindings, "ZL", @"mouse:left");
+    bindPress(_config.hybridBindings, "ZL", @"mouse:right");
     bindPress(_config.hybridBindings, "UP", @"system:pov");
     bindPress(_config.hybridBindings, "DOWN", @"key:q");
     bindTap(_config.hybridBindings, "LEFT", @"key:left_arrow");
@@ -664,14 +664,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.hybridBindings, "CAMERA", @"system:screenshot");
     bindPress(_config.hybridBindings, "CHAT", @"system:discord");
 
-    bindTap(_config.keyboardBindings, "A", @"system:space_click");
+    bindTap(_config.keyboardBindings, "A", @"key:space");
     bindTap(_config.keyboardBindings, "B", @"system:shift_delete");
     bindPress(_config.keyboardBindings, "X", @"key:f");
     bindPress(_config.keyboardBindings, "Y", @"key:e");
     bindPress(_config.keyboardBindings, "R", @"mouse:scroll_down");
-    bindPress(_config.keyboardBindings, "ZR", @"key:left_control");
+    bindPress(_config.keyboardBindings, "ZR", @"mouse:left");
     bindPress(_config.keyboardBindings, "L", @"mouse:scroll_up");
-    bindPress(_config.keyboardBindings, "ZL", @"mouse:scroll_down");
+    bindPress(_config.keyboardBindings, "ZL", @"mouse:right");
     bindPress(_config.keyboardBindings, "UP", @"system:pov");
     bindPress(_config.keyboardBindings, "DOWN", @"key:q");
     bindTap(_config.keyboardBindings, "LEFT", @"key:left_arrow");

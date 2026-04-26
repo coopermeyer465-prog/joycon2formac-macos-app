@@ -28,11 +28,11 @@
         "tap": "system:shift_delete"
       },
       "R": "mouse:left",
-      "ZR": "mouse:right",
+      "ZR": "mouse:left",
       "X": "key:f",
       "Y": "key:e",
       "L": "mouse:scroll_up",
-      "ZL": "mouse:scroll_down",
+      "ZL": "mouse:right",
       "UP": "system:pov",
       "DOWN": "key:q",
       "LEFT": {
@@ -56,17 +56,17 @@
     },
     "hybrid": {
       "A": {
-        "tap": "system:space_click"
+        "tap": "key:space"
       },
       "B": {
         "tap": "system:shift_delete"
       },
       "R": "mouse:scroll_down",
-      "ZR": "mouse:right",
+      "ZR": "mouse:left",
       "X": "key:f",
       "Y": "key:e",
       "L": "mouse:scroll_up",
-      "ZL": "mouse:left",
+      "ZL": "mouse:right",
       "UP": "system:pov",
       "DOWN": "key:q",
       "LEFT": {
@@ -90,13 +90,14 @@
     },
     "keyboard": {
       "A": {
-        "tap": "system:space_click"
+        "tap": "key:space"
       },
       "B": {
         "tap": "system:shift_delete"
       },
       "R": "mouse:scroll_down",
-      "ZR": "key:left_control",
+      "ZR": "mouse:left",
+      "ZL": "mouse:right",
       "X": "key:f",
       "Y": "key:e",
       "UP": "system:pov",
