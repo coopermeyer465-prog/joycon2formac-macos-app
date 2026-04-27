@@ -482,13 +482,6 @@ static NSString* BindingSummaryFromValue(id value) {
     [appMenu addItem:reconfigureItem];
     [reconfigureItem release];
 
-    NSMenuItem* configFolderItem = [[NSMenuItem alloc] initWithTitle:@"Open Config Folder"
-                                                              action:@selector(openConfigFolder:)
-                                                       keyEquivalent:@""];
-    [configFolderItem setTarget:self];
-    [appMenu addItem:configFolderItem];
-    [configFolderItem release];
-
     [appMenu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem* quitItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Quit %@", appName]
@@ -518,13 +511,6 @@ static NSString* BindingSummaryFromValue(id value) {
     [reconfigureItem setTarget:self];
     [statusMenu addItem:reconfigureItem];
     [reconfigureItem release];
-
-    NSMenuItem* configFolderItem = [[NSMenuItem alloc] initWithTitle:@"Open Config Folder"
-                                                              action:@selector(openConfigFolder:)
-                                                       keyEquivalent:@""];
-    [configFolderItem setTarget:self];
-    [statusMenu addItem:configFolderItem];
-    [configFolderItem release];
 
     [statusMenu addItem:[NSMenuItem separatorItem]];
 
