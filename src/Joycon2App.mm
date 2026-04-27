@@ -540,7 +540,8 @@ static NSString* BindingSummaryFromValue(id value) {
 
 - (void)enterBackgroundMode {
     [self.window orderOut:nil];
-    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    // Keep running as a menu bar app without a Dock icon.
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
 }
 
 - (void)showConfigurationWindow:(id)sender {
