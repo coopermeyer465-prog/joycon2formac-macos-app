@@ -12,6 +12,7 @@ APP_BUNDLE="build/${APP_NAME}.app"
 APP_INFO_PLIST="Joycon2forMac-App-Info.plist"
 APP_ENTITLEMENTS="Joycon2forMac.entitlements"
 CONFIG_FILE="joycon2_config.json"
+APP_ICON_FILE="assets/JoyCon2forMac.icns"
 DIST_DIR="dist"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 RELEASE_DRAFT="${RELEASE_DRAFT:-false}"
@@ -85,6 +86,9 @@ assemble_signed_app_bundle() {
 
     cp "$APP_INFO_PLIST" "$target_bundle/Contents/Info.plist"
     cp "$CONFIG_FILE" "$target_bundle/Contents/Resources/$CONFIG_FILE"
+    if [ -f "$APP_ICON_FILE" ]; then
+        cp "$APP_ICON_FILE" "$target_bundle/Contents/Resources/JoyCon2forMac.icns"
+    fi
 
     sign_app_bundle "$target_bundle"
 }
