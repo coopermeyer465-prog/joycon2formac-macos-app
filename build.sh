@@ -8,17 +8,18 @@ cd "$(dirname "$0")"
 
 APP_NAME="JoyCon2forMac"
 APP_EXECUTABLE="JoyCon2forMac"
-APP_BUNDLE="build/${APP_NAME}.app"
+BUILD_DIR="${BUILD_DIR:-build.noindex}"
+DIST_DIR="${DIST_DIR:-dist.noindex}"
+APP_BUNDLE="${BUILD_DIR}/${APP_NAME}.app"
 APP_INFO_PLIST="Joycon2forMac-App-Info.plist"
 APP_ENTITLEMENTS="Joycon2forMac.entitlements"
 CONFIG_FILE="joycon2_config.json"
 APP_ICON_FILE="assets/JoyCon2forMac.icns"
-DIST_DIR="dist"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 RELEASE_DRAFT="${RELEASE_DRAFT:-false}"
 RELEASE_NOTES_FILE="${RELEASE_NOTES_FILE:-}"
 
-mkdir -p build
+mkdir -p "$BUILD_DIR"
 
 BUILD_MODE=${1:-FULL}
 BUILD_TYPE=${2:-debug}
@@ -71,7 +72,7 @@ build_full_binary() {
     clang++ -std=c++17 -x objective-c++ $DEBUG_FLAG \
         -framework Foundation -framework AppKit -framework IOKit -framework CoreBluetooth -framework ApplicationServices \
         -Iinclude src/Joycon2VirtualHID.mm src/Joycon2BLEReceiver.mm src/main_ble.mm \
-        -o build/Joycon2VirtualHID
+        -o "${BUILD_DIR}/Joycon2VirtualHID"
 }
 
 assemble_signed_app_bundle() {
@@ -112,7 +113,7 @@ build_ble_only() {
     clang++ -std=c++17 -x objective-c++ $DEBUG_FLAG -DHID_ENABLE \
         -framework Foundation -framework CoreBluetooth \
         -Iinclude src/Joycon2BLEReceiver.mm src/main_ble.mm \
-        -o build/Joycon2BLEReceiver
+        -o "${BUILD_DIR}/Joycon2BLEReceiver"
 }
 
 build_dist() {

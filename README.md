@@ -85,12 +85,12 @@ Build the BLE parser only:
 
 Build outputs:
 
-- `build/Joycon2VirtualHID`
-- `build/JoyCon2forMac.app`
-- `build/Joycon2BLEReceiver`
-- `dist/JoyCon2forMac-<version>-macOS.zip`
-- `dist/JoyCon2forMac-<version>-macOS.dmg`
-- `dist/JoyCon2forMac-<version>/INSTALL.txt`
+- `build.noindex/Joycon2VirtualHID`
+- `build.noindex/JoyCon2forMac.app`
+- `build.noindex/Joycon2BLEReceiver`
+- `dist.noindex/JoyCon2forMac-<version>-macOS.zip`
+- `dist.noindex/JoyCon2forMac-<version>-macOS.dmg`
+- `dist.noindex/JoyCon2forMac-<version>/INSTALL.txt`
 
 ## Download
 
@@ -114,9 +114,9 @@ CODESIGN_IDENTITY="Developer ID Application: Your Name" ./build.sh DIST release
 
 That produces:
 
-- a signed `.app` bundle in `build/JoyCon2forMac.app`
-- a drag-and-drop `.dmg` in `dist/`
-- a `.zip` release archive in `dist/`
+- a signed `.app` bundle in `build.noindex/JoyCon2forMac.app`
+- a drag-and-drop `.dmg` in `dist.noindex/`
+- a `.zip` release archive in `dist.noindex/`
 
 To push those artifacts straight to GitHub Releases:
 
@@ -156,7 +156,7 @@ Hybrid mode:
 App bundle:
 
 ```bash
-open /Users/marissameyer/Desktop/Joycon2forMac/Joycon2forMac-publish/build/JoyCon2forMac.app
+open /Users/marissameyer/Desktop/Joycon2forMac/Joycon2forMac-publish/build.noindex/JoyCon2forMac.app
 ```
 
 The app starts scanning automatically, even if its config window is hidden. The app window includes a capture-based mapper:
