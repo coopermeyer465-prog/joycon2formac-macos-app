@@ -198,6 +198,68 @@ static NSString* BindingSummaryFromValue(id value) {
 
 @implementation Joycon2AppDelegate
 
+- (BOOL)isRunningFromApplicationsFolder {
+    NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
+    return [bundlePath hasPrefix:@"/Applications/"];
+}
+
+- (void)relaunchFromPath:(NSString*)appPath {
+    if (appPath.length == 0) {
+        return;
+    }
+    NSTask* task = [[[NSTask alloc] init] autorelease];
+    task.launchPath = @"/usr/bin/open";
+    task.arguments = @[appPath];
+    @try {
+        [task launch];
+    } @catch (NSException* exception) {
+        NSLog(@"Failed to relaunch app: %@", exception);
+    }
+}
+
+- (BOOL)promptToMoveToApplicationsIfNeeded {
+    if ([self isRunningFromApplicationsFolder]) {
+        return NO;
+    }
+
+    NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
+    NSString* destinationPath = [@"/Applications" stringByAppendingPathComponent:[bundlePath lastPathComponent]];
+
+    NSAlert* alert = [[[NSAlert alloc] init] autorelease];
+    alert.messageText = @"Move JoyCon2forMac to Applications?";
+    alert.informativeText = @"To run correctly and avoid duplicates in Launchpad, JoyCon2forMac should be installed in /Applications. Click “Move to Applications” to copy it there and relaunch.";
+    [alert addButtonWithTitle:@"Move to Applications"];
+    [alert addButtonWithTitle:@"Quit"];
+    [alert addButtonWithTitle:@"Run From Here"];
+
+    NSModalResponse response = [alert runModal];
+    if (response == NSAlertSecondButtonReturn) {
+        [NSApp terminate:nil];
+        return YES;
+    }
+    if (response == NSAlertThirdButtonReturn) {
+        return NO;
+    }
+
+    NSError* error = nil;
+    NSFileManager* fm = [NSFileManager defaultManager];
+    if ([fm fileExistsAtPath:destinationPath]) {
+        if (![fm removeItemAtPath:destinationPath error:&error]) {
+            NSLog(@"Failed to remove existing app at %@: %@", destinationPath, error);
+            return NO;
+        }
+    }
+    error = nil;
+    if (![fm copyItemAtPath:bundlePath toPath:destinationPath error:&error]) {
+        NSLog(@"Failed to copy app to %@: %@", destinationPath, error);
+        return NO;
+    }
+
+    [self relaunchFromPath:destinationPath];
+    [NSApp terminate:nil];
+    return YES;
+}
+
 - (void)enableLaunchAtLoginIfPossible {
     if (@available(macOS 13.0, *)) {
         SMAppService* service = [SMAppService mainAppService];
@@ -213,6 +275,9 @@ static NSString* BindingSummaryFromValue(id value) {
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
+    if ([self promptToMoveToApplicationsIfNeeded]) {
+        return;
+    }
     [self prepareConfig];
     [self loadConfigDocument];
     [self setupMainMenu];

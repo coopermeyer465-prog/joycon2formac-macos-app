@@ -65,11 +65,12 @@ The app is intentionally small. The runtime path is:
 ## Requirements
 
 - macOS 10.15 or later
-- Xcode Command Line Tools
 - Bluetooth enabled on the Mac
 - Nintendo Switch 2 Joy-Con controller(s)
 
-Install command line tools if needed:
+Release installs (DMG/ZIP) do not require Xcode Command Line Tools or Terminal.
+
+Building from source does require Xcode Command Line Tools:
 
 ```bash
 xcode-select --install
