@@ -37,6 +37,13 @@ The app runs in the menu bar.
 2. Choose `Reconfigure / Remap...`
 3. Click `Map Joy-Con Button`, press the controller button, then choose the action.
 
+## Credits
+
+This project is based on and heavily inspired by:
+
+- `seitanmen/Joycon2forMac` (original repo and early implementation)
+  - https://github.com/seitanmen/Joycon2forMac
+
 ## Dev Build (Optional)
 
 Only needed if you’re building from source:
