@@ -1,10 +1,12 @@
 # JoyCon2forMac
 
-Joy-Con 2 mouse + keyboard mapper for macOS (menu bar app).
+Joy-Con 2 mouse + keyboard mapper for macOS.
+
+It runs in the menu bar (top-right of your screen) and can keep scanning/connected in the background even when its configuration window is closed.
 
 ## Download
 
-- Latest DMG: `https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.dmg`
+- Latest DMG: https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.dmg
 
 ## Install
 
