@@ -1,454 +1,48 @@
-# Joycon2 for Mac
+# JoyCon2forMac
 
-`Joycon2forMac` is a macOS-first utility that connects to Nintendo Switch 2 Joy-Con controllers over Bluetooth Low Energy and turns their input into Mac keyboard and mouse events.
-
-## Quick Install (Recommended)
-
-macOS won’t run an app “directly from a link” without downloading it first (Gatekeeper). The closest easy flow is a `.dmg` you download, then drag the app into `Applications`.
-
-- Download DMG (always the latest): `https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.dmg`
-- Open the DMG
-- Drag `JoyCon2forMac.app` into `Applications`
-- Open `JoyCon2forMac` from `Applications`
-
-### Permissions (Required)
-
-The app synthesizes keyboard and mouse events, so macOS may require:
-
-- `Bluetooth`
-- `Accessibility`
-- `Input Monitoring` in some setups
-
-If buttons, mouse clicks, or stick-to-keyboard output do nothing:
-
-1. Open `System Settings -> Privacy & Security -> Accessibility`
-2. Allow `JoyCon2forMac`
-3. If needed, also allow it in `Input Monitoring`
-4. Quit and relaunch the app
-
-Current focus:
-
-- keep BLE discovery and connection working on macOS
-- use the **right Joy-Con** mouse sensor for cursor control
-- keep the **left Joy-Con** out of mouse movement by default
-- support `mouse`, `keyboard`, and `hybrid` output modes
-- make button and stick mappings configurable with a simple JSON file
-
-## Current Data Flow
-
-The app is intentionally small. The runtime path is:
-
-1. `Joycon2BLEReceiver` scans for Nintendo BLE devices and auto-connects.
-2. CoreBluetooth notifications arrive in `didUpdateValueForCharacteristic`.
-3. The 63-byte Joy-Con packet is parsed by `parseJoycon2Data`.
-4. The parsed packet is converted into an `NSDictionary` with controller metadata:
-   - device type (`L` / `R` / `Unknown`)
-   - peripheral identifier
-   - peripheral name
-5. `Joycon2VirtualHID` receives that packet through the `onDataReceived` callback.
-6. `Joycon2VirtualHID` applies the selected mode and config:
-   - right Joy-Con mouse sensor -> Mac cursor movement
-   - configured buttons -> keyboard keys
-   - configured buttons -> mouse clicks / scroll
-   - left stick -> `WASD`, arrow keys, or disabled
-
-## Features
-
-- BLE discovery and connection for Joy-Con 2 devices
-- right Joy-Con mouse sensor support for cursor movement
-- configurable mouse click and scroll bindings
-- keyboard bindings for Joy-Con buttons
-- left stick to `WASD` or arrow keys
-- hybrid mode for mouse + keyboard/mouse-button output at the same time
-- JSON config file for sensitivity, deadzones, left Joy-Con participation, and bindings
-
-## Requirements
-
-- macOS 10.15 or later
-- Bluetooth enabled on the Mac
-- Nintendo Switch 2 Joy-Con controller(s)
-
-Release installs (DMG/ZIP) do not require Xcode Command Line Tools or Terminal.
-
-Building from source does require Xcode Command Line Tools:
-
-```bash
-xcode-select --install
-```
-
-## Build
-
-Build the full macOS input app:
-
-```bash
-./build.sh FULL debug
-```
-
-Build the distributable macOS app bundle:
-
-```bash
-./build.sh APP release
-```
-
-Build the shareable release artifacts:
-
-```bash
-./build.sh DIST release
-```
-
-Build and publish a GitHub Release from the current commit:
-
-```bash
-./build.sh RELEASE release
-```
-
-Build the BLE parser only:
-
-```bash
-./build.sh BLE_ONLY debug
-```
-
-Build outputs:
-
-- `build.noindex/Joycon2VirtualHID`
-- `build.noindex/JoyCon2forMac.app`
-- `build.noindex/Joycon2BLEReceiver`
-- `dist.noindex/JoyCon2forMac-<version>-macOS.zip`
-- `dist.noindex/JoyCon2forMac-<version>-macOS.dmg`
-- `dist.noindex/JoyCon2forMac-<version>/INSTALL.txt`
+Joy-Con 2 mouse + keyboard mapper for macOS (menu bar app).
 
 ## Download
 
 - Latest DMG: `https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.dmg`
-- Latest ZIP: `https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.zip`
-- Releases page: https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases
-- Source ZIP: https://github.com/coopermeyer465-prog/joycon2formac-macos-app/archive/refs/heads/main.zip
 
-## Distributable App
+## Install
 
-For a normal Mac app handoff, use:
-
-```bash
-./build.sh DIST release
-```
-
-If you have a real Apple signing identity installed, you can use it instead of ad-hoc signing:
-
-```bash
-CODESIGN_IDENTITY="Developer ID Application: Your Name" ./build.sh DIST release
-```
-
-That produces:
-
-- a signed `.app` bundle in `build.noindex/JoyCon2forMac.app`
-- a drag-and-drop `.dmg` in `dist.noindex/`
-- a `.zip` release archive in `dist.noindex/`
-
-To push those artifacts straight to GitHub Releases:
-
-```bash
-./build.sh RELEASE release
-```
-
-Optional release environment variables:
-
-- `CODESIGN_IDENTITY="Developer ID Application: Your Name"` to use a real signing identity
-- `RELEASE_DRAFT=true` to create or keep the GitHub Release as a draft
-- `RELEASE_NOTES_FILE=/absolute/path/to/notes.md` to use custom release notes instead of GitHub-generated notes
-
-Install flow for another Mac:
-
-1. Open the `.dmg`.
+1. Open the DMG.
 2. Drag `JoyCon2forMac.app` into `Applications`.
-3. Open it from `Applications`.
-4. Grant Bluetooth and Accessibility when macOS asks.
+3. Open `JoyCon2forMac` from `Applications`.
 
-Current release limitation:
+## Permissions (Required)
 
-- the app is ad-hoc signed locally for easier packaging
-- it is not Developer ID notarized yet, so Gatekeeper may still warn on other Macs
-- a fully polished public release would need Apple Developer signing + notarization
+Open `System Settings -> Privacy & Security` and allow `JoyCon2forMac`:
 
-## Run
+- `Accessibility` (System Control)
+- `Screen Recording` (required for screenshots / screen recording)
+- `Bluetooth`
+- `Input Monitoring` (if buttons/keys/clicks still do nothing)
 
-Default run uses `joycon2_config.json` in the repo root.
+After changing permissions, quit and relaunch the app.
 
-Hybrid mode:
-
-```bash
-./build/Joycon2VirtualHID --hybrid
-```
-
-App bundle:
-
-```bash
-open /Users/marissameyer/Desktop/Joycon2forMac/Joycon2forMac-publish/build.noindex/JoyCon2forMac.app
-```
-
-The app starts scanning automatically, even if its config window is hidden. The app window includes a capture-based mapper:
-
-- click `Map Joy-Con Button`
-- press the Joy-Con button you want to edit
-- choose whether it should use a normal `Press / Hold` action or a `Tap Only` action
-- `Press / Hold` means a quick tap triggers the same output once, while holding the Joy-Con button keeps that output held
-- if you choose a keyboard action, press the Mac key you want to bind
-- if you choose a mouse or system action, pick it from the popup
-- use the two sensitivity fields in the app window to change mouse-sensor and right-stick cursor sensitivity without editing JSON by hand
-
-Mouse-only mode:
-
-```bash
-./build/Joycon2VirtualHID --mouse
-```
-
-Keyboard-only mode:
-
-```bash
-./build/Joycon2VirtualHID --keyboard
-```
-
-Use a custom config path:
-
-```bash
-./build/Joycon2VirtualHID --hybrid --config /absolute/path/to/joycon2_config.json
-```
-
-BLE parser only:
-
-```bash
-./build/Joycon2BLEReceiver
-```
-
-Runtime mode shortcuts:
-
-- `Control + Option + Command + H`: hybrid mode
-- `Control + Option + Command + M`: mouse mode
-- `Control + Option + Command + K`: keyboard mode
-
-## Pairing and Permissions
-
-### Pair the Joy-Con
+## Pair Joy-Cons
 
 1. Turn Bluetooth on in macOS.
 2. Hold the Joy-Con sync button until the LEDs start flashing.
-3. Open `JoyCon2forMac.app`.
-4. Leave the controller in pairing mode until the app shows that it connected.
+3. Open `JoyCon2forMac.app` and leave the Joy-Con in pairing mode until it connects.
 
-The app performs BLE discovery itself. You do not need to pair through a separate gamepad driver.
+## Remap
 
-### Required macOS permissions
+The app runs in the menu bar.
 
-The app synthesizes keyboard and mouse events, so macOS may require:
+1. Click `JoyCon2forMac` in the menu bar.
+2. Choose `Reconfigure / Remap...`
+3. Click `Map Joy-Con Button`, press the controller button, then choose the action.
 
-- `Bluetooth`
-- `Accessibility`
-- `Input Monitoring` in some setups
+## Dev Build (Optional)
 
-Without `Accessibility`, most controller buttons, left-stick keyboard output, mode switching, and injected mouse clicks will appear to do nothing even if BLE connection is working.
+Only needed if you’re building from source:
 
-If injected mouse/keyboard events do not work:
-
-1. Open `System Settings -> Privacy & Security -> Accessibility`
-2. Allow `JoyCon2forMac`
-3. If needed, also allow it in `Input Monitoring`
-4. Quit and relaunch the app
-
-## Config File
-
-The default config file is [`joycon2_config.json`](./joycon2_config.json).
-
-Example:
-
-```json
-{
-  "configVersion": 3,
-  "mode": "hybrid",
-  "enableLeftJoyCon": true,
-  "mouse": {
-    "sensitivity": 0.35,
-    "rightStickSensitivity": 0.35,
-    "deadzone": 2.0,
-    "smoothing": 0.6,
-    "maxStep": 45.0,
-    "jumpThreshold": 800.0,
-    "calibrationSeconds": 1.0,
-    "invertX": false,
-    "invertY": false,
-    "scrollStep": 3
-  },
-  "keyboard": {
-    "leftStickMode": "wasd",
-    "stickDeadzone": 0.35
-  },
-  "bindings": {},
-  "modeBindings": {
-    "mouse": {
-      "A": "key:space",
-      "B": {
-        "press": "key:left_shift",
-        "tap": "key:delete"
-      },
-      "R": "mouse:left",
-      "ZR": "mouse:right",
-      "Y": "key:e",
-      "X": "key:f",
-      "RIGHT": "key:t",
-      "LEFT": "key:left_arrow",
-      "UP": "system:pov",
-      "DOWN": "key:q",
-      "LS": "system:double_w",
-      "RS": "system:pov",
-      "CHAT": "system:discord",
-      "HOME": "system:launchpad"
-    },
-    "hybrid": {
-      "A": "key:space",
-      "B": {
-        "press": "key:left_shift",
-        "tap": "key:delete"
-      },
-      "R": "mouse:scroll_down",
-      "L": "mouse:scroll_up",
-      "ZL": "mouse:left",
-      "Y": "key:e",
-      "X": "key:f",
-      "RIGHT": "key:t",
-      "LEFT": "key:left_arrow",
-      "UP": "system:pov",
-      "DOWN": "key:q",
-      "LS": "system:double_w",
-      "RS": "system:pov"
-    }
-  }
-}
+```bash
+xcode-select --install
+cd /Users/marissameyer/Desktop/Joycon2forMac/Joycon2forMac-publish
+./build.sh APP release
 ```
-
-### Supported config fields
-
-- `mode`: `hybrid`, `mouse`, or `keyboard`
-- `configVersion`: built-in config schema version used by the app for safe upgrades
-- `enableLeftJoyCon`: `true` or `false`
-- `mouse.sensitivity`: cursor scale factor
-- `mouse.rightStickSensitivity`: cursor scale factor for right-stick mouse control
-- `mouse.deadzone`: ignore tiny sensor deltas
-- `mouse.smoothing`: keeps some previous motion to reduce jitter
-- `mouse.maxStep`: caps large per-packet cursor jumps
-- `mouse.jumpThreshold`: ignores obvious sensor blips
-- `mouse.calibrationSeconds`: startup stationary calibration time
-- `mouse.invertX`, `mouse.invertY`
-- `mouse.scrollStep`: amount for scroll button bindings
-- `keyboard.leftStickMode`: `wasd`, `arrows`, or `none`
-- `keyboard.stickDeadzone`: digital threshold for stick-to-key conversion
-- `bindings`: button-to-action mapping
-- `modeBindings.mouse`, `modeBindings.hybrid`, `modeBindings.keyboard`: per-mode overrides
-- binding values can be:
-  - a string such as `key:space`, which means “hold this action while the Joy-Con button is held”
-  - an object such as `{ "press": "key:left_shift", "tap": "key:delete" }`
-
-### Supported button names
-
-- `A`, `B`, `X`, `Y`
-- `L`, `ZL`, `R`, `ZR`
-- `LS`, `RS`
-- `START`, `SELECT`
-- `HOME`, `CAMERA`, `CHAT`
-- `SL(L)`, `SR(L)`, `SL(R)`, `SR(R)`
-
-### Supported binding actions
-
-- `key:<name>`
-- `mouse:left`
-- `mouse:right`
-- `mouse:middle`
-- `mouse:scroll_up`
-- `mouse:scroll_down`
-- `mouse:scroll_left`
-- `mouse:scroll_right`
-- `system:launchpad`
-- `system:screenshot`
-- `system:discord`
-- `system:pov`
-- `system:double_w`
-
-Examples:
-
-- `key:space`
-- `key:return`
-- `key:escape`
-- `key:tab`
-- `key:q`
-- `key:left_shift`
-- `key:up_arrow`
-
-## Notes About Controller Behavior
-
-- Cursor movement comes only from packets marked as **right Joy-Con**.
-- Cursor movement comes from the right Joy-Con **mouse sensor** by default.
-- When you intentionally deflect the right stick, it takes over cursor movement immediately, which keeps mouse mode usable in games that hide the cursor or make the mouse-sensor path awkward.
-- Default Minecraft-style layout now includes:
-  - `A`: jump / `space`
-  - `B`: hold `shift`, tap `delete`
-  - `Y`: inventory / `e`
-  - `X`: interact / `f`
-  - `Right`: chat / `t`
-  - `Left`: left arrow
-  - `Up`: change POV / `Fn+F5`
-  - `Down`: drop item / `q`
-  - `LS`: double-tap `w`
-  - `RS`: change POV / `Fn+F5`
-  - `Plus` and `Minus`: `escape`
-  - `GameChat`: open Discord in the default browser
-- Left Joy-Con packets are ignored completely when `enableLeftJoyCon` is `false`.
-- Button bindings still work in hybrid mode for either controller that is allowed by config.
-- Left stick to keyboard is evaluated from left-controller packets, which avoids the right Joy-Con accidentally cancelling stick directions.
-- The screenshot button supports two behaviors by default: tap for a full-screen screenshot in Documents, hold for about 1 second to start screen recording, then tap again to stop and save the recording to Documents.
-- Captures are saved directly in `~/Documents`.
-- Launchpad is triggered through the macOS Launchpad special-key path first, with the keyboard F4 path kept as a fallback.
-
-## Troubleshooting
-
-### The cursor jumps or feels noisy
-
-- lower `mouse.sensitivity`
-- raise `mouse.deadzone`
-- raise `mouse.smoothing`
-- lower `mouse.maxStep`
-
-### The left Joy-Con is interfering
-
-Set:
-
-```json
-{
-  "enableLeftJoyCon": false
-}
-```
-
-### Buttons are not producing expected key presses
-
-- check the button name in `bindings`
-- check the key name format, for example `key:space` or `key:escape`
-- make sure the app has Accessibility permission
-
-### Screenshot or screen recording does not start
-
-- allow the app or terminal in `System Settings -> Privacy & Security -> Screen Recording`
-- screenshots and recordings are saved in `Documents`
-
-### BLE connects but no packets arrive
-
-- put the Joy-Con back into sync mode
-- relaunch the app
-- try `./build/Joycon2BLEReceiver` first to verify the BLE path independently
-
-## Source Files
-
-- `src/Joycon2BLEReceiver.mm`: BLE scan, connect, characteristic discovery, packet parsing
-- `src/Joycon2VirtualHID.mm`: config loading, mouse injection, keyboard injection, hybrid mode logic
-- `src/main_ble.mm`: CLI argument parsing and startup
-- `include/Joycon2BLEReceiver.h`: BLE interfaces
-- `include/Joycon2VirtualHID.h`: HID interfaces and mode definitions
-
-## License
-
-MIT License
