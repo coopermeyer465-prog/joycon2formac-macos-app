@@ -2,6 +2,30 @@
 
 `Joycon2forMac` is a macOS-first utility that connects to Nintendo Switch 2 Joy-Con controllers over Bluetooth Low Energy and turns their input into Mac keyboard and mouse events.
 
+## Quick Install (Recommended)
+
+macOS won’t run an app “directly from a link” without downloading it first (Gatekeeper). The closest easy flow is a `.dmg` you download, then drag the app into `Applications`.
+
+- Download DMG (always the latest): `https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.dmg`
+- Open the DMG
+- Drag `JoyCon2forMac.app` into `Applications`
+- Open `JoyCon2forMac` from `Applications`
+
+### Permissions (Required)
+
+The app synthesizes keyboard and mouse events, so macOS may require:
+
+- `Bluetooth`
+- `Accessibility`
+- `Input Monitoring` in some setups
+
+If buttons, mouse clicks, or stick-to-keyboard output do nothing:
+
+1. Open `System Settings -> Privacy & Security -> Accessibility`
+2. Allow `JoyCon2forMac`
+3. If needed, also allow it in `Input Monitoring`
+4. Quit and relaunch the app
+
 Current focus:
 
 - keep BLE discovery and connection working on macOS
@@ -94,9 +118,10 @@ Build outputs:
 
 ## Download
 
-- Source ZIP: [main.zip](https://github.com/coopermeyer465-prog/joycon2formac-macos-app/archive/refs/heads/main.zip)
-- Repository page: [coopermeyer465-prog/joycon2formac-macos-app](https://github.com/coopermeyer465-prog/joycon2formac-macos-app)
-- Releases page: [GitHub Releases](https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases)
+- Latest DMG: `https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.dmg`
+- Latest ZIP: `https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.zip`
+- Releases page: https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases
+- Source ZIP: https://github.com/coopermeyer465-prog/joycon2formac-macos-app/archive/refs/heads/main.zip
 
 ## Distributable App
 
@@ -205,8 +230,8 @@ Runtime mode shortcuts:
 
 1. Turn Bluetooth on in macOS.
 2. Hold the Joy-Con sync button until the LEDs start flashing.
-3. Start `Joycon2VirtualHID`.
-4. Leave the controller in pairing mode until the app logs that it connected.
+3. Open `JoyCon2forMac.app`.
+4. Leave the controller in pairing mode until the app shows that it connected.
 
 The app performs BLE discovery itself. You do not need to pair through a separate gamepad driver.
 
@@ -220,12 +245,12 @@ The app synthesizes keyboard and mouse events, so macOS may require:
 
 Without `Accessibility`, most controller buttons, left-stick keyboard output, mode switching, and injected mouse clicks will appear to do nothing even if BLE connection is working.
 
-If mode switching or injected mouse/keyboard events do not work:
+If injected mouse/keyboard events do not work:
 
 1. Open `System Settings -> Privacy & Security -> Accessibility`
-2. Allow the terminal or app you launched the binary from
+2. Allow `JoyCon2forMac`
 3. If needed, also allow it in `Input Monitoring`
-4. Quit and relaunch the binary
+4. Quit and relaunch the app
 
 ## Config File
 

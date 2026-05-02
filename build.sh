@@ -122,6 +122,8 @@ build_dist() {
     local package_folder_name
     local zip_path
     local dmg_path
+    local stable_zip_path
+    local stable_dmg_path
     local dmg_stage
     local stage_root
     local stage_bundle
@@ -134,6 +136,8 @@ build_dist() {
     package_folder_name="$(basename "$package_root")"
     zip_path="$DIST_DIR/${APP_NAME}-${version}-macOS.zip"
     dmg_path="$DIST_DIR/${APP_NAME}-${version}-macOS.dmg"
+    stable_zip_path="$DIST_DIR/${APP_NAME}-macOS.zip"
+    stable_dmg_path="$DIST_DIR/${APP_NAME}-macOS.dmg"
     dmg_stage="$DIST_DIR/.dmg-stage"
 
     echo "Building in DIST mode (${APP_NAME}.app) in $BUILD_TYPE mode..."
@@ -173,11 +177,17 @@ EOF
     ln -s /Applications "$dmg_stage/Applications"
     hdiutil create -volname "$APP_NAME" -srcfolder "$dmg_stage" -ov -format UDZO "$dmg_path" >/dev/null
 
+    # Stable names for README "latest download" links.
+    cp -f "$zip_path" "$stable_zip_path"
+    cp -f "$dmg_path" "$stable_dmg_path"
+
     rm -rf "$dmg_stage" "$stage_root"
 
     echo "Distributable artifacts created:"
     echo "  $zip_path"
     echo "  $dmg_path"
+    echo "  $stable_zip_path"
+    echo "  $stable_dmg_path"
     echo "  $package_root/INSTALL.txt"
 }
 
@@ -187,6 +197,8 @@ publish_release() {
     local title
     local zip_path
     local dmg_path
+    local stable_zip_path
+    local stable_dmg_path
     local repo
     local draft_flag=""
     local notes_args=()
@@ -201,6 +213,8 @@ publish_release() {
     title="${APP_NAME} ${version}"
     zip_path="$DIST_DIR/${APP_NAME}-${version}-macOS.zip"
     dmg_path="$DIST_DIR/${APP_NAME}-${version}-macOS.dmg"
+    stable_zip_path="$DIST_DIR/${APP_NAME}-macOS.zip"
+    stable_dmg_path="$DIST_DIR/${APP_NAME}-macOS.dmg"
     repo="$(repo_slug)"
 
     build_dist
@@ -217,7 +231,7 @@ publish_release() {
 
     if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
         echo "Updating existing GitHub release $tag..."
-        gh release upload "$tag" "$zip_path" "$dmg_path" --clobber --repo "$repo"
+        gh release upload "$tag" "$zip_path" "$dmg_path" "$stable_zip_path" "$stable_dmg_path" --clobber --repo "$repo"
         if [[ -n "$draft_flag" ]]; then
             gh release edit "$tag" --title "$title" "$draft_flag" --repo "$repo"
         else
@@ -226,9 +240,9 @@ publish_release() {
     else
         echo "Creating GitHub release $tag..."
         if [[ -n "$draft_flag" ]]; then
-            gh release create "$tag" "$zip_path" "$dmg_path" --title "$title" "${notes_args[@]}" "$draft_flag" --repo "$repo"
+            gh release create "$tag" "$zip_path" "$dmg_path" "$stable_zip_path" "$stable_dmg_path" --title "$title" "${notes_args[@]}" "$draft_flag" --repo "$repo"
         else
-            gh release create "$tag" "$zip_path" "$dmg_path" --title "$title" "${notes_args[@]}" --repo "$repo"
+            gh release create "$tag" "$zip_path" "$dmg_path" "$stable_zip_path" "$stable_dmg_path" --title "$title" "${notes_args[@]}" --repo "$repo"
         fi
     fi
 
