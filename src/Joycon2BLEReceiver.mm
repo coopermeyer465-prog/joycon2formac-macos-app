@@ -17,9 +17,7 @@ NSString* const SUBSCRIBE_CHARACTERISTIC_UUID = @"AB7DE9BE-89FE-49AD-828F-118F09
 // Global data counter
 int dataReceiveCounter = 0;
 
-
-
-// 接続開始時刻を記録（ミリ秒単位）
+// Record connection start time (milliseconds resolution)
 std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 
 static NSString* PeripheralKey(CBPeripheral* peripheral) {
@@ -43,15 +41,15 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
         self.writeCharacteristicsByPeripheral = [[NSMutableDictionary alloc] init];
         self.subscribeCharacteristicsByPeripheral = [[NSMutableDictionary alloc] init];
         self.deviceTypesByPeripheral = [[NSMutableDictionary alloc] init];
-        self.deviceType = @"Unknown"; // デフォルト値を設定
+        self.deviceType = @"Unknown"; // Default
 
-        // データ受信タイムアウト用のタイマーを初期化
+        // Data receive timeout timer
         self.dataTimeoutTimer = nil;
 
-        // コマンド定期送信用タイマーを初期化
+        // Periodic command sender timer
         self.commandTimer = nil;
 
-        // シングルトンインスタンスを設定
+        // Set singleton instance (legacy path)
         if (!sharedInstance) {
             sharedInstance = self;
         }
@@ -124,7 +122,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
         bool hasValidManufacturerId = false;
 
         if ([manufacturerData isKindOfClass:[NSDictionary class]]) {
-            // NSDictionaryの場合
+            // manufacturerData may be provided as an NSDictionary
             NSNumber* companyIdNumber = [[manufacturerData allKeys] firstObject];
             if (companyIdNumber) {
                 companyId = [companyIdNumber unsignedShortValue];
@@ -132,7 +130,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
                 hasValidManufacturerId = true;
             }
         } else if ([manufacturerData isKindOfClass:[NSData class]]) {
-            // NSDataの場合
+            // or as NSData
             NSData* data = (NSData*)manufacturerData;
             if (data.length >= 2) {
                 [data getBytes:&companyId length:sizeof(uint16_t)];
@@ -147,23 +145,23 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
                 self.onDeviceFound(peripheral.name, peripheral.identifier.UUIDString);
             }
 
-            // 既に接続中または接続済みでない場合のみ接続を試行
+            // Only connect if we're not already connecting/connected.
             if (![self.connectingPeripherals containsObject:peripheral.identifier] && ![self.connectedPeripherals containsObject:peripheral.identifier]) {
                 std::cout << "🔗 Attempting to connect to Joy-Con..." << std::endl;
                 [self.connectingPeripherals addObject:peripheral.identifier];
                 std::cout << "📊 Connection state updated - Connecting: " << [self.connectingPeripherals count]
                 << ", Connected: " << [self.connectedPeripherals count] << std::endl;
 
-                // 接続オプションを設定（接続維持を強化）
+                // Connection options (prefer staying connected).
                 NSDictionary* connectOptions = @{
                     CBConnectPeripheralOptionNotifyOnConnectionKey: @YES,
                     CBConnectPeripheralOptionNotifyOnDisconnectionKey: @YES,
                     CBConnectPeripheralOptionNotifyOnNotificationKey: @YES,
-                    CBConnectPeripheralOptionStartDelayKey: @0  // 即時接続
+                    CBConnectPeripheralOptionStartDelayKey: @0  // Connect immediately
                 };
                 [self.centralManager connectPeripheral:peripheral options:connectOptions];
 
-                // 接続タイムアウトを設定（60秒）
+                // Connection timeout (60s)
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     if ([self.connectingPeripherals containsObject:peripheral.identifier] && ![self.connectedPeripherals containsObject:peripheral.identifier]) {
                         std::cout << "⏰ Connection timeout for " << deviceName << std::endl;
@@ -186,7 +184,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
     log("SUCCESS", "Connected to: " + nameStr);
     log("INFO", "Discovering services and characteristics...");
 
-    // 接続状態を更新
+    // Update connection state.
     [self.connectingPeripherals removeObject:peripheral.identifier];
     [self.connectedPeripherals addObject:peripheral.identifier];
 
@@ -196,7 +194,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
     self.connectedPeripheral = peripheral;
     self.connectedPeripheral.delegate = self;
 
-    // デバイスの種類を判定して保存
+    // Determine and store device type.
     self.deviceType = [Joycon2BLEReceiver determineDeviceType:peripheral];
     NSString* peripheralKey = PeripheralKey(peripheral);
     if (peripheralKey.length > 0) {
@@ -204,10 +202,10 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
     }
     std::cout << "🎮 Device type detected: " << [self.deviceType UTF8String] << std::endl;
 
-    // データ受信タイムアウトタイマーを開始（30秒）
+    // Start data timeout timer (30s).
     [self startDataTimeoutTimer];
 
-    // 接続開始時刻を記録（ミリ秒単位）
+    // Record connection start time.
     connectionStartTime = std::chrono::system_clock::now();
 
     std::cout << "ℹ️  Initialization will begin after discovery" << std::endl;
@@ -224,12 +222,12 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
     std::cout << "❌ Error code: " << [error code] << std::endl;
     std::cout << "❌ Error domain: " << [error.domain UTF8String] << std::endl;
 
-    // 接続状態をクリーンアップ
+    // Clean up connection state.
     [self.connectingPeripherals removeObject:peripheral.identifier];
     std::cout << "📊 Connection state updated - Connecting: " << [self.connectingPeripherals count]
               << ", Connected: " << [self.connectedPeripherals count] << std::endl;
 
-    // 再接続を試行
+    // Retry connection.
     std::cout << "🔄 Retrying connection in 2 seconds..." << std::endl;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         std::cout << "🔄 Retrying connection..." << std::endl;
@@ -249,13 +247,12 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
         std::cout << "🔌 Disconnected from " << [peripheral.name UTF8String] << " (no error)" << std::endl;
     }
 
-    // データ受信タイムアウトタイマーを無効化
+    // Stop timers.
     [self invalidateDataTimeoutTimer];
 
-    // コマンド定期送信タイマーを無効化
     [self invalidateCommandTimer];
 
-    // 接続状態をクリーンアップ
+    // Clean up connection state.
     [self.connectedPeripherals removeObject:peripheral.identifier];
     [self.connectingPeripherals removeObject:peripheral.identifier];
     NSString* peripheralKey = PeripheralKey(peripheral);
@@ -267,7 +264,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
     std::cout << "📊 Connection state updated - Connecting: " << [self.connectingPeripherals count]
               << ", Connected: " << [self.connectedPeripherals count] << std::endl;
 
-    // 再接続を試行
+    // Attempt reconnect.
     std::cout << "🔄 Attempting to reconnect in 3 seconds..." << std::endl;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         std::cout << "🔄 Reconnecting..." << std::endl;
@@ -318,7 +315,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
             std::cout << "    📡 Enabling notifications for data stream..." << std::endl;
             [peripheral setNotifyValue:YES forCharacteristic:characteristic];
         } else {
-            // 書き込み可能なキャラクタリスティックを探す
+            // Fallback: first writable characteristic.
             if (characteristic.properties & CBCharacteristicPropertyWrite) {
                 std::cout << "    💡 Found writable characteristic: " << [characteristic.UUID.UUIDString UTF8String] << std::endl;
                 if (!writeCharacteristic) {
@@ -329,7 +326,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
                     }
                 }
             }
-            // 通知可能なキャラクタリスティックを探す
+            // Fallback: first notifiable characteristic.
             if (characteristic.properties & CBCharacteristicPropertyNotify) {
                 if ([characteristic.UUID.UUIDString isEqualToString:SUBSCRIBE_CHARACTERISTIC_UUID]) {
                     std::cout << "    📡 Found notifiable characteristic: " << [characteristic.UUID.UUIDString UTF8String] << std::endl;
@@ -343,13 +340,13 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
         }
     }
 
-    // すべてのサービスを探索し終わった後にチェック
+    // Check after service discovery completes.
     if (writeCharacteristic && subscribeCharacteristic) {
         self.writeCharacteristic = writeCharacteristic;
         self.subscribeCharacteristic = subscribeCharacteristic;
         std::cout << "✓ All required characteristics found, preparing for notification..." << std::endl;
 
-        // キャラクタリスティック発見後に初期化コマンドを送信
+        // Send init commands after characteristics are found.
         std::cout << "skipInitCommands: " << (self.skipInitCommands ? "YES" : "NO") << std::endl;
         if (!self.skipInitCommands) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -358,7 +355,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
             });
         }
 
-        // キャラクタリスティック発見後に通知を有効化（2秒待機）
+        // Ensure notifications are enabled after a short delay.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             std::cout << "📡 Enabling notifications for data stream..." << std::endl;
             [peripheral setNotifyValue:YES forCharacteristic:subscribeCharacteristic];
@@ -378,13 +375,13 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
 
     if ([characteristic.UUID.UUIDString isEqualToString:SUBSCRIBE_CHARACTERISTIC_UUID]) {
         if (data.length > 0) {
-            // バッファサイズチェック
+            // Size check.
             if (data.length < 0x3C) {
                 std::cout << "⚠️  Received data packet too small (" << data.length << " bytes, expected >= 60)" << std::endl;
                 return;
             }
 
-            // データ受信のログを追加（詳細）
+            // Detailed receive log.
             dataReceiveCounter++;
             std::string nameStr = peripheral.name ? [peripheral.name UTF8String] : "Unknown";
             log("SECTION", "------ " + nameStr + " Data Packet #" + std::to_string(dataReceiveCounter) + " ------");
@@ -392,13 +389,13 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
 
 
 
-            // データ受信タイムアウトタイマーをリセット
+            // Reset timeout timer.
             [self resetDataTimeoutTimer];
 
             try {
                 std::vector<uint8_t> dataVector((uint8_t*)data.bytes, (uint8_t*)data.bytes + data.length);
 
-                // データ検証
+                // Validate data vector.
                 if (dataVector.size() < 0x3C) {
                     std::cout << "❌ Data vector size invalid: " << dataVector.size() << std::endl;
                     return;
@@ -406,7 +403,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
 
                 auto parsedData = [Joycon2BLEReceiver parseJoycon2Data:dataVector];
 
-                // パケットIDが70付近になったらログを追加
+                // Extra log when packetId is around ~70 (debugging).
                 int packetId = (int)parsedData.at("PacketID");
                 if (packetId >= 65 && packetId <= 75) {
                     std::cout << "🔍 PacketID around 70: " << packetId << std::endl;
@@ -414,7 +411,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
 
 
 
-                // 詳細表示
+                // Print parsed values.
                 [Joycon2BLEReceiver printParsedData:parsedData data:dataVector];
 
                 if (self.onDataReceived) {
@@ -438,8 +435,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
             std::cout << "⚠️  Received empty data packet" << std::endl;
         }
     } else {
-        // 他のキャラクタリスティックからのデータは無視（ログ出力しない）
-        // 必要に応じてデバッグ時に有効化
+        // Ignore other characteristics by default (enable for debugging if needed).
         // if (data.length > 0) {
         //     std::cout << "📄 Received " << data.length << " bytes from " << [characteristic.UUID.UUIDString UTF8String] << std::endl;
         // }
@@ -490,17 +486,17 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
     auto currentTime = std::chrono::system_clock::now();
     auto currentMs = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
     std::cout << "⏱️  Init commands sent at: " << currentMs << " ms" << std::endl;
-    // Joy-Con2の初期化コマンド
+    // Joy-Con 2 initialization commands
     NSArray* commands = @[
-        // コマンド1: 0c91010200040000FF000000 ボタン通知有効化
+        // Command 1: enable button notifications
         [NSData dataWithBytes:(uint8_t[]){0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00} length:12],
-        // コマンド2: 0c91010400040000FF000000 IMU,マウス通知有効化
+        // Command 2: enable IMU / mouse notifications
         [NSData dataWithBytes:(uint8_t[]){0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00} length:12]
     ];
     for (int i = 0; i < commands.count; i++) {
         std::cout << "📤 Sending command " << (i + 1) << "/" << commands.count << " (length: " << [commands[i] length] << ")" << std::endl;
 
-        // コマンドの内容を16進数で出力
+        // Print command bytes (hex)
         const uint8_t* bytes = (const uint8_t*)[commands[i] bytes];
         std::cout << "   Command hex: ";
         for (NSUInteger j = 0; j < [commands[i] length]; j++) {
@@ -514,7 +510,7 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
 
         std::cout << "✅ Command " << (i + 1) << " sent" << std::endl;
 
-        // 最後のコマンド以外は500ms待機
+        // Wait 500ms between commands
         if (i < commands.count - 1) {
             [NSThread sleepForTimeInterval:0.5];
         }
@@ -524,15 +520,15 @@ static NSString* PeripheralKey(CBPeripheral* peripheral) {
 - (void)sendWriteCommands {
     std::cout << "🚀 Sending initialization commands to Joy-Con..." << std::endl;
 
-    // Joy-Con2の初期化コマンド
+    // Joy-Con 2 initialization commands
     NSArray* commands = @[
-        // コマンド1: 0c91010200040000FF000000
+        // Command 1
         [NSData dataWithBytes:(uint8_t[]){0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00} length:12],
-        // コマンド2: 0c91010400040000FF000000
+        // Command 2
         [NSData dataWithBytes:(uint8_t[]){0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00} length:12]
     ];
 
-    // 両方のコマンドを同時に送信
+    // Send both commands
     for (int i = 0; i < commands.count; i++) {
         std::cout << "📤 Sending command " << (i + 1) << "/" << commands.count << " (length: " << [commands[i] length] << ")" << std::endl;
 
@@ -562,7 +558,7 @@ static Joycon2BLEReceiver* sharedInstance = nil;
         return @"Unknown";
     }
 
-    // デバイス名から判定 (詳細化)
+    // Determine from device name (best-effort)
     NSString* deviceName = peripheral.name;
     if (deviceName) {
         if ([deviceName containsString:@"(L)"] || [deviceName containsString:@"Left"] || [deviceName containsString:@"Joy-Con2 (L)"]) {
@@ -574,13 +570,13 @@ static Joycon2BLEReceiver* sharedInstance = nil;
         }
     }
 
-    // デフォルトはUnknown
+    // Default
     return @"Unknown";
 }
 
 // C++ utility functions
 + (int16_t)toInt16:(const std::vector<uint8_t>&)data offset:(size_t)offset {
-    // バッファチェック
+    // Bounds check
     if (offset + 2 > data.size()) {
         std::cout << "❌ Buffer overflow in toInt16: offset=" << offset << ", size=" << data.size() << std::endl;
         return 0;
@@ -591,7 +587,7 @@ static Joycon2BLEReceiver* sharedInstance = nil;
 }
 
 + (uint16_t)toUint16:(const std::vector<uint8_t>&)data offset:(size_t)offset {
-    // バッファチェック
+    // Bounds check
     if (offset + 2 > data.size()) {
         std::cout << "❌ Buffer overflow in toUint16: offset=" << offset << ", size=" << data.size() << std::endl;
         return 0;
@@ -602,7 +598,7 @@ static Joycon2BLEReceiver* sharedInstance = nil;
 }
 
 + (uint32_t)toUint24:(const std::vector<uint8_t>&)data offset:(size_t)offset {
-    // バッファチェック
+    // Bounds check
     if (offset + 3 > data.size()) {
         std::cout << "❌ Buffer overflow in toUint24: offset=" << offset << ", size=" << data.size() << std::endl;
         return 0;
@@ -613,7 +609,7 @@ static Joycon2BLEReceiver* sharedInstance = nil;
 }
 
 + (uint32_t)toUint32:(const std::vector<uint8_t>&)data offset:(size_t)offset {
-    // バッファチェック
+    // Bounds check
     if (offset + 4 > data.size()) {
         std::cout << "❌ Buffer overflow in toUint32: offset=" << offset << ", size=" << data.size() << std::endl;
         return 0;
@@ -635,10 +631,10 @@ static Joycon2BLEReceiver* sharedInstance = nil;
 + (std::map<std::string, double>)parseJoycon2Data:(const std::vector<uint8_t>&)data {
     std::map<std::string, double> parsed;
 
-    // バッファサイズチェック
+    // Size check.
     if (data.size() < 0x3C) {
         std::cout << "❌ Insufficient data size for parsing: " << data.size() << " bytes" << std::endl;
-        return parsed; // 空のマップを返す
+        return parsed; // Return empty map
     }
 
     parsed["PacketID"] = (double) [Joycon2BLEReceiver toUint24:data offset:0];
@@ -676,7 +672,7 @@ static Joycon2BLEReceiver* sharedInstance = nil;
 
     parsed["TemperatureRaw"] = (double) [Joycon2BLEReceiver toInt16:data offset:0x2E];
 
-    // 計算値の追加
+    // Derived values.
     parsed["BatteryVoltage"] = parsed["BatteryVoltageRaw"] / 1000.0;
     parsed["BatteryCurrent"] = parsed["BatteryCurrentRaw"] / 100.0;
     parsed["Temperature"] = 25.0 + parsed["TemperatureRaw"] / 127.0;
@@ -706,7 +702,7 @@ static Joycon2BLEReceiver* sharedInstance = nil;
     return buttonNames;
 }
 
-// グローバル変数で前回のマウス位置とカウンタを保存
+// Track last mouse position and a print counter.
 static int16_t lastMouseX = 0;
 static int16_t lastMouseY = 0;
 static int dataCounter = 0;
@@ -716,14 +712,14 @@ static int dataCounter = 0;
     auto currentTime = std::chrono::system_clock::now();
     auto currentMs = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
 
-    // 表示間隔チェック
+    // Print interval check.
     Joycon2BLEReceiver* client = [Joycon2BLEReceiver sharedInstance];
     if (client.displayInterval > 1 && (dataCounter % client.displayInterval) != 0) {
-        return; // 表示しない
+        return; // Skip
     }
 
     #ifdef DEBUG
-        // Debugモード: 通常のログ出力
+        // Debug mode: normal log output.
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - connectionStartTime).count();
         log("DATA", "Elapsed: " + std::to_string(elapsed) + " ms");
 
@@ -778,11 +774,11 @@ static int dataCounter = 0;
 
         std::cout << std::flush;
     #else
-        // Releaseモード: 画面をクリアして更新表示
-        std::cout << "\033[2J\033[1;1H"; // 画面クリアとカーソル移動
+        // Release mode: clear screen and print.
+        std::cout << "\033[2J\033[1;1H"; // Clear screen + move cursor
 
         std::cout << "=================================================" << std::endl;
-        //デバイス名を取得して表示
+        // Print device name.
         Joycon2BLEReceiver* viewer = [Joycon2BLEReceiver sharedInstance];
         NSString* deviceName = viewer.connectedPeripheral.name;
         std::string nameStr = deviceName ? [deviceName UTF8String] : "Unknown Device";
@@ -846,7 +842,7 @@ static int dataCounter = 0;
 }
 
 - (void)startDataTimeoutTimer {
-    [self invalidateDataTimeoutTimer]; // 既存のタイマーを無効化
+    [self invalidateDataTimeoutTimer]; // Clear any existing timer
     self.dataTimeoutTimer = [NSTimer scheduledTimerWithTimeInterval:30.0
                                                              target:self
                                                            selector:@selector(dataTimeoutFired:)
@@ -859,7 +855,7 @@ static int dataCounter = 0;
         [self.dataTimeoutTimer invalidate];
         self.dataTimeoutTimer = nil;
     }
-    // 新しいタイマーを開始
+    // Start a new timer.
     [self startDataTimeoutTimer];
 }
 
@@ -888,7 +884,7 @@ static int dataCounter = 0;
     std::cout << "⏰ Data timeout fired! No data received for 30 seconds." << std::endl;
     std::cout << "🔍 Checking connection status..." << std::endl;
 
-    // 接続状態を確認
+    // Check connection state.
     if (self.connectedPeripheral) {
         std::cout << "📡 Connected peripheral: " << [self.connectedPeripheral.name UTF8String] << std::endl;
         std::cout << "🔌 Connection state: " << self.connectedPeripheral.state << std::endl;
@@ -896,14 +892,14 @@ static int dataCounter = 0;
         std::cout << "❌ No connected peripheral" << std::endl;
     }
 
-    // パケットが確認できなくなった時点での接続時間を計算（ミリ秒単位）
+    // Compute connection duration at packet loss (ms).
     auto connectionDuration = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - connectionStartTime).count();
     std::cout << "⏱️  Connection duration before packet loss: " << connectionDuration << " ms (" << connectionDuration / 1000 << "s " << connectionDuration % 1000 << "ms)" << std::endl;
     std::cout << "📊 Final data counter: " << dataReceiveCounter << " packets received" << std::endl;
 
     std::cout << "🛑 Stopping program due to packet loss..." << std::endl;
 
-    // プログラムを終了
+    // Exit process.
     exit(0);
 }
 

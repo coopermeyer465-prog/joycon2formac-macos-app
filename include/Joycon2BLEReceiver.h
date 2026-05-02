@@ -19,16 +19,16 @@
 @property (strong, nonatomic) CBCharacteristic* writeCharacteristic;
 @property (strong, nonatomic) CBCharacteristic* subscribeCharacteristic;
 @property (assign, nonatomic) BOOL shouldScan;
-@property (strong, nonatomic) NSMutableSet* connectingPeripherals; // 接続中のデバイスを追跡
-@property (strong, nonatomic) NSMutableSet* connectedPeripherals; // 接続済みのデバイスを追跡
+@property (strong, nonatomic) NSMutableSet* connectingPeripherals; // Track peripherals we are connecting to
+@property (strong, nonatomic) NSMutableSet* connectedPeripherals; // Track peripherals that are connected
 @property (strong, nonatomic) NSMutableDictionary* writeCharacteristicsByPeripheral;
 @property (strong, nonatomic) NSMutableDictionary* subscribeCharacteristicsByPeripheral;
 @property (strong, nonatomic) NSMutableDictionary* deviceTypesByPeripheral;
-@property (strong, nonatomic) NSString* deviceType; // 接続されたデバイスの種類 (L/R/Unknown)
-@property (strong, nonatomic) NSTimer* dataTimeoutTimer; // データ受信タイムアウト用タイマー
-@property (strong, nonatomic) NSTimer* commandTimer; // コマンド定期送信用タイマー
-@property (assign, nonatomic) int displayInterval; // パケット表示間隔
-@property (assign, nonatomic) BOOL skipInitCommands; // 初期化コマンド送信をスキップ
+@property (strong, nonatomic) NSString* deviceType; // Connected device type (L/R/Pro/Unknown)
+@property (strong, nonatomic) NSTimer* dataTimeoutTimer; // Data receive timeout timer
+@property (strong, nonatomic) NSTimer* commandTimer; // Periodic command sender timer
+@property (assign, nonatomic) int displayInterval; // Packet print interval
+@property (assign, nonatomic) BOOL skipInitCommands; // Skip sending init commands
 
 // Constants
 extern const uint16_t JOYCON2_MANUFACTURER_ID;
