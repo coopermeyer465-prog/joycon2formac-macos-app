@@ -1,5 +1,5 @@
 {
-  "configVersion": 3,
+  "configVersion": 4,
   "mode": "hybrid",
   "enableLeftJoyCon": true,
   "mouse": {
@@ -117,6 +117,26 @@
       "HOME": "system:launchpad",
       "CAMERA": "system:screenshot",
       "CHAT": "system:discord"
+    },
+    "gamepad": {
+      "A": "gamepad:a",
+      "B": "gamepad:b",
+      "X": "gamepad:x",
+      "Y": "gamepad:y",
+      "L": "gamepad:l1",
+      "R": "gamepad:r1",
+      "ZL": "gamepad:l2",
+      "ZR": "gamepad:r2",
+      "UP": "gamepad:dpad_up",
+      "DOWN": "gamepad:dpad_down",
+      "LEFT": "gamepad:dpad_left",
+      "RIGHT": "gamepad:dpad_right",
+      "LS": "gamepad:l3",
+      "RS": "gamepad:r3",
+      "SELECT": "gamepad:minus",
+      "START": "gamepad:plus",
+      "HOME": "gamepad:home",
+      "CAMERA": "gamepad:capture"
     }
   }
 }

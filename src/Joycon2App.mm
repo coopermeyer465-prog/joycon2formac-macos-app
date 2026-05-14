@@ -4,7 +4,7 @@
 #import "../include/Joycon2BLEReceiver.h"
 #import "../include/Joycon2VirtualHID.h"
 
-static NSInteger const kJoyConConfigVersion = 3;
+static NSInteger const kJoyConConfigVersion = 4;
 
 static NSArray<NSString*>* ButtonOrder(void) {
     static NSArray<NSString*>* buttons = nil;
@@ -177,6 +177,7 @@ static NSString* BindingSummaryFromValue(id value) {
 
 @interface Joycon2AppDelegate : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate>
 @property (strong, nonatomic) NSWindow* window;
+@property (strong, nonatomic) NSTextField* titleLabel;
 @property (strong, nonatomic) NSTextField* statusLabel;
 @property (strong, nonatomic) NSButton* toggleButton;
 @property (strong, nonatomic) NSTextField* configPathLabel;
@@ -325,6 +326,10 @@ static NSString* BindingSummaryFromValue(id value) {
 }
 
 - (NSString*)currentModeKey {
+    NSString* mode = self.configDocument[@"mode"];
+    if ([mode isKindOfClass:[NSString class]] && mode.length > 0) {
+        return mode;
+    }
     return @"hybrid";
 }
 
@@ -340,6 +345,18 @@ static NSString* BindingSummaryFromValue(id value) {
         self.configDocument[@"modeBindings"] = [NSMutableDictionary dictionary];
     }
     [self refreshSensitivityControls];
+}
+
+- (void)setConfigModeAndRestartIfNeeded:(NSString*)modeKey {
+    if (modeKey.length == 0) {
+        return;
+    }
+    NSString* current = [self currentModeKey];
+    if ([current isEqualToString:modeKey]) {
+        return;
+    }
+    self.configDocument[@"mode"] = modeKey;
+    [self saveConfigDocumentAndRestartIfNeeded];
 }
 
 - (NSInteger)estimatedBatteryPercentFromVoltage:(double)voltage {
@@ -434,10 +451,10 @@ static NSString* BindingSummaryFromValue(id value) {
 
     NSView* contentView = self.window.contentView;
 
-    NSTextField* title = [self labelWithFrame:NSMakeRect(24, 592, 480, 28)
-                                         text:@"Joy-Con 2 mapping + mouse for macOS"
-                                         font:[NSFont boldSystemFontOfSize:20]];
-    [contentView addSubview:title];
+    self.titleLabel = [self labelWithFrame:NSMakeRect(24, 592, 760, 28)
+                                      text:@"Joy-Con 2 mapping for macOS"
+                                      font:[NSFont boldSystemFontOfSize:20]];
+    [contentView addSubview:self.titleLabel];
 
     self.statusLabel = [self labelWithFrame:NSMakeRect(24, 560, 760, 22)
                                        text:@"Status: starting"
@@ -541,11 +558,18 @@ static NSString* BindingSummaryFromValue(id value) {
 
     NSMenu* appMenu = [[NSMenu alloc] initWithTitle:appName];
     NSMenuItem* reconfigureItem = [[NSMenuItem alloc] initWithTitle:@"Reconfigure / Remap..."
-                                                             action:@selector(showConfigurationWindow:)
+                                                             action:@selector(showHybridConfigurationWindow:)
                                                       keyEquivalent:@","];
     [reconfigureItem setTarget:self];
     [appMenu addItem:reconfigureItem];
     [reconfigureItem release];
+
+    NSMenuItem* gamepadItem = [[NSMenuItem alloc] initWithTitle:@"Gamepad Controls..."
+                                                        action:@selector(showGamepadConfigurationWindow:)
+                                                 keyEquivalent:@""];
+    [gamepadItem setTarget:self];
+    [appMenu addItem:gamepadItem];
+    [gamepadItem release];
 
     [appMenu addItem:[NSMenuItem separatorItem]];
 
@@ -571,11 +595,18 @@ static NSString* BindingSummaryFromValue(id value) {
 
     NSMenu* statusMenu = [[NSMenu alloc] initWithTitle:@"JoyCon2forMac"];
     NSMenuItem* reconfigureItem = [[NSMenuItem alloc] initWithTitle:@"Reconfigure / Remap..."
-                                                             action:@selector(showConfigurationWindow:)
+                                                             action:@selector(showHybridConfigurationWindow:)
                                                       keyEquivalent:@""];
     [reconfigureItem setTarget:self];
     [statusMenu addItem:reconfigureItem];
     [reconfigureItem release];
+
+    NSMenuItem* gamepadItem = [[NSMenuItem alloc] initWithTitle:@"Gamepad Controls..."
+                                                        action:@selector(showGamepadConfigurationWindow:)
+                                                 keyEquivalent:@""];
+    [gamepadItem setTarget:self];
+    [statusMenu addItem:gamepadItem];
+    [gamepadItem release];
 
     [statusMenu addItem:[NSMenuItem separatorItem]];
 
@@ -595,9 +626,25 @@ static NSString* BindingSummaryFromValue(id value) {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
 }
 
+- (void)showHybridConfigurationWindow:(id)sender {
+    [self setConfigModeAndRestartIfNeeded:@"hybrid"];
+    [self showConfigurationWindow:sender];
+}
+
+- (void)showGamepadConfigurationWindow:(id)sender {
+    [self setConfigModeAndRestartIfNeeded:@"gamepad"];
+    [self showConfigurationWindow:sender];
+}
+
 - (void)showConfigurationWindow:(id)sender {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [self buildWindow];
+    NSString* modeKey = [[self currentModeKey] lowercaseString];
+    if ([modeKey isEqualToString:@"gamepad"]) {
+        self.titleLabel.stringValue = @"Joy-Con 2 mapping + gamepad for macOS";
+    } else {
+        self.titleLabel.stringValue = @"Joy-Con 2 mapping + mouse + keyboard for macOS";
+    }
     [self refreshBindingsTable];
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
@@ -645,6 +692,17 @@ static NSString* BindingSummaryFromValue(id value) {
 }
 
 - (EmulationMode)selectedMode {
+    NSString* modeKey = [self currentModeKey];
+    NSString* lower = [[modeKey lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([lower isEqualToString:@"mouse"]) {
+        return MODE_MOUSE;
+    }
+    if ([lower isEqualToString:@"keyboard"]) {
+        return MODE_KEYBOARD;
+    }
+    if ([lower isEqualToString:@"gamepad"]) {
+        return MODE_GAMEPAD;
+    }
     return MODE_HYBRID;
 }
 
@@ -887,7 +945,7 @@ static NSString* BindingSummaryFromValue(id value) {
 - (NSString*)promptForActionWithPrompt:(NSString*)prompt {
     NSString* category = [self promptWithTitle:@"Choose Output Type"
                                        message:prompt
-                                       options:@[@"Keyboard Key", @"Mouse Action", @"System Action", @"Open App", @"Run Terminal Command", @"Open File", @"Clear Binding"]];
+                                       options:@[@"Keyboard Key", @"Mouse Action", @"Gamepad Action", @"System Action", @"Open App", @"Run Terminal Command", @"Open File", @"Clear Binding"]];
     if (!category) {
         return nil;
     }
@@ -938,6 +996,31 @@ static NSString* BindingSummaryFromValue(id value) {
                                         message:prompt
                                         options:actionMap.allKeys];
         return label ? actionMap[label] : nil;
+    }
+
+    if ([category isEqualToString:@"Gamepad Action"]) {
+        NSDictionary* gamepadMap = @{
+            @"A Button": @"gamepad:a",
+            @"B Button": @"gamepad:b",
+            @"X Button": @"gamepad:x",
+            @"Y Button": @"gamepad:y",
+            @"L Button": @"gamepad:l1",
+            @"R Button": @"gamepad:r1",
+            @"ZL Button": @"gamepad:l2",
+            @"ZR Button": @"gamepad:r2",
+            @"Minus": @"gamepad:minus",
+            @"Plus": @"gamepad:plus",
+            @"Left Stick Click": @"gamepad:l3",
+            @"Right Stick Click": @"gamepad:r3",
+            @"D-Pad Up": @"gamepad:dpad_up",
+            @"D-Pad Down": @"gamepad:dpad_down",
+            @"D-Pad Left": @"gamepad:dpad_left",
+            @"D-Pad Right": @"gamepad:dpad_right"
+        };
+        NSString* label = [self promptWithTitle:@"Choose Gamepad Action"
+                                        message:prompt
+                                        options:gamepadMap.allKeys];
+        return label ? gamepadMap[label] : nil;
     }
 
     NSDictionary* systemMap = @{

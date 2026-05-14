@@ -10,7 +10,8 @@
 typedef enum {
     MODE_HYBRID,
     MODE_MOUSE,
-    MODE_KEYBOARD
+    MODE_KEYBOARD,
+    MODE_GAMEPAD
 } EmulationMode;
 
 @interface Joycon2VirtualHID : NSObject {

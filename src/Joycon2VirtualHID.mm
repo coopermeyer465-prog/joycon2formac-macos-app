@@ -13,11 +13,20 @@
 #include <string>
 #include <unistd.h>
 
+// CommandLineTools-only setups may not ship the IOHIDUserDevice header, but the symbols exist at runtime.
+typedef struct __IOHIDUserDevice* IOHIDUserDeviceRef;
+extern "C" {
+IOHIDUserDeviceRef IOHIDUserDeviceCreate(CFAllocatorRef allocator, CFDictionaryRef properties);
+IOReturn IOHIDUserDeviceHandleReport(IOHIDUserDeviceRef device, const uint8_t* report, CFIndex reportLength);
+}
+
 typedef NS_ENUM(NSInteger, BindingActionKind) {
     BindingActionKindNone = 0,
     BindingActionKindKey,
     BindingActionKindMouseButton,
     BindingActionKindScroll,
+    BindingActionKindGamepadButton,
+    BindingActionKindGamepadDpad,
     BindingActionKindLaunchpad,
     BindingActionKindScreenshot,
     BindingActionKindOpenURL,
@@ -58,6 +67,8 @@ struct BindingAction {
     BindingMacroKind macroKind = BindingMacroKindNone;
     CGKeyCode keyCode = 0;
     CGMouseButton mouseButton = kCGMouseButtonLeft;
+    uint16_t gamepadButtonMask = 0;
+    uint8_t gamepadDpadDirection = 8; // 0-7 = direction, 8 = neutral
     int scrollX = 0;
     int scrollY = 0;
     std::string url;
@@ -79,6 +90,7 @@ struct RuntimeConfig {
     std::map<uint32_t, ButtonBinding> mouseBindings;
     std::map<uint32_t, ButtonBinding> keyboardBindings;
     std::map<uint32_t, ButtonBinding> hybridBindings;
+    std::map<uint32_t, ButtonBinding> gamepadBindings;
     std::string loadedFrom;
 };
 
@@ -186,6 +198,9 @@ static EmulationMode ModeFromString(NSString* value) {
     if ([lower isEqualToString:@"keyboard"]) {
         return MODE_KEYBOARD;
     }
+    if ([lower isEqualToString:@"gamepad"]) {
+        return MODE_GAMEPAD;
+    }
     return MODE_HYBRID;
 }
 
@@ -195,6 +210,8 @@ static NSString* ModeName(EmulationMode mode) {
             return @"mouse";
         case MODE_KEYBOARD:
             return @"keyboard";
+        case MODE_GAMEPAD:
+            return @"gamepad";
         case MODE_HYBRID:
         default:
             return @"hybrid";
@@ -255,6 +272,65 @@ static BindingAction ParseActionString(NSString* actionString, const RuntimeConf
             action.kind = BindingActionKindScroll;
             action.scrollX = config.mouse.scrollStep;
         }
+    }
+
+    if ([category isEqualToString:@"gamepad"]) {
+        if (target == "a") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 0);
+        } else if (target == "b") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 1);
+        } else if (target == "x") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 2);
+        } else if (target == "y") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 3);
+        } else if (target == "l1") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 4);
+        } else if (target == "r1") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 5);
+        } else if (target == "l2") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 6);
+        } else if (target == "r2") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 7);
+        } else if (target == "minus") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 8);
+        } else if (target == "plus") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 9);
+        } else if (target == "l3") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 10);
+        } else if (target == "r3") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 11);
+        } else if (target == "home") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 12);
+        } else if (target == "capture") {
+            action.kind = BindingActionKindGamepadButton;
+            action.gamepadButtonMask = (1u << 13);
+        } else if (target == "dpad_up") {
+            action.kind = BindingActionKindGamepadDpad;
+            action.gamepadDpadDirection = 0;
+        } else if (target == "dpad_down") {
+            action.kind = BindingActionKindGamepadDpad;
+            action.gamepadDpadDirection = 1;
+        } else if (target == "dpad_left") {
+            action.kind = BindingActionKindGamepadDpad;
+            action.gamepadDpadDirection = 2;
+        } else if (target == "dpad_right") {
+            action.kind = BindingActionKindGamepadDpad;
+            action.gamepadDpadDirection = 3;
+        }
+        return action;
     }
 
     if ([category isEqualToString:@"system"]) {
@@ -380,9 +456,25 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
     CGPoint _cursorPosition;
     CFAbsoluteTime _lastDoubleWAt;
     CFAbsoluteTime _lastSpaceTapAt;
+    IOHIDUserDeviceRef _gamepadDevice;
+    uint16_t _gamepadButtons;
+    bool _gamepadDpadUp;
+    bool _gamepadDpadDown;
+    bool _gamepadDpadLeft;
+    bool _gamepadDpadRight;
+    int8_t _gamepadLX;
+    int8_t _gamepadLY;
+    int8_t _gamepadRX;
+    int8_t _gamepadRY;
 }
 - (void)setupKeyboardEventTap;
 - (void)ensureAccessibilityPermission;
+- (void)setupGamepadDeviceIfNeeded;
+- (void)destroyGamepadDevice;
+- (void)sendGamepadReport;
+- (void)setGamepadButtonMask:(uint16_t)mask down:(BOOL)down;
+- (void)setGamepadDpadDirection:(uint8_t)direction down:(BOOL)down;
+- (void)updateGamepadAxesFromJoyconData:(NSDictionary*)joyconData deviceType:(const std::string&)deviceType;
 - (void)loadConfig;
 - (void)installDefaultBindings;
 - (const ButtonBinding*)bindingForMask:(uint32_t)mask mode:(EmulationMode)mode;
@@ -585,6 +677,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         LoadBindingsFromDictionary(modeBindings[@"mouse"], _config.mouseBindings, _config, @"modeBindings.mouse");
         LoadBindingsFromDictionary(modeBindings[@"keyboard"], _config.keyboardBindings, _config, @"modeBindings.keyboard");
         LoadBindingsFromDictionary(modeBindings[@"hybrid"], _config.hybridBindings, _config, @"modeBindings.hybrid");
+        LoadBindingsFromDictionary(modeBindings[@"gamepad"], _config.gamepadBindings, _config, @"modeBindings.gamepad");
     }
 
     NSLog(@"Loaded config from %@ (mode=%@, leftJoyCon=%@)", resolvedPath, ModeName(_config.defaultMode), _config.enableLeftJoyCon ? @"enabled" : @"disabled");
@@ -617,6 +710,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _config.mouseBindings.clear();
     _config.keyboardBindings.clear();
     _config.hybridBindings.clear();
+    _config.gamepadBindings.clear();
 
     bindTap(_config.mouseBindings, "A", @"key:space");
     bindPress(_config.mouseBindings, "R", @"mouse:left");
@@ -686,6 +780,26 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.keyboardBindings, "HOME", @"system:launchpad");
     bindPress(_config.keyboardBindings, "CAMERA", @"system:screenshot");
     bindPress(_config.keyboardBindings, "CHAT", @"system:discord");
+
+    // Default gamepad mapping: Joy-Con button labels map to the same named gamepad buttons.
+    bindPress(_config.gamepadBindings, "A", @"gamepad:a");
+    bindPress(_config.gamepadBindings, "B", @"gamepad:b");
+    bindPress(_config.gamepadBindings, "X", @"gamepad:x");
+    bindPress(_config.gamepadBindings, "Y", @"gamepad:y");
+    bindPress(_config.gamepadBindings, "L", @"gamepad:l1");
+    bindPress(_config.gamepadBindings, "R", @"gamepad:r1");
+    bindPress(_config.gamepadBindings, "ZL", @"gamepad:l2");
+    bindPress(_config.gamepadBindings, "ZR", @"gamepad:r2");
+    bindPress(_config.gamepadBindings, "UP", @"gamepad:dpad_up");
+    bindPress(_config.gamepadBindings, "DOWN", @"gamepad:dpad_down");
+    bindPress(_config.gamepadBindings, "LEFT", @"gamepad:dpad_left");
+    bindPress(_config.gamepadBindings, "RIGHT", @"gamepad:dpad_right");
+    bindPress(_config.gamepadBindings, "LS", @"gamepad:l3");
+    bindPress(_config.gamepadBindings, "RS", @"gamepad:r3");
+    bindPress(_config.gamepadBindings, "SELECT", @"gamepad:minus");
+    bindPress(_config.gamepadBindings, "START", @"gamepad:plus");
+    bindPress(_config.gamepadBindings, "HOME", @"gamepad:home");
+    bindPress(_config.gamepadBindings, "CAMERA", @"gamepad:capture");
 }
 
 - (void)startEmulation {
@@ -694,6 +808,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 #endif
     [self ensureAccessibilityPermission];
     [self setupKeyboardEventTap];
+    [self setupGamepadDeviceIfNeeded];
     NSLog(@"Started Joy-Con emulation in %@ mode", ModeName(self.emulationMode));
 }
 
@@ -702,6 +817,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 #ifndef HID_ENABLE
     [joyconClient disconnect];
 #endif
+    [self destroyGamepadDevice];
     if (_eventTap) {
         CFMachPortInvalidate(_eventTap);
         CFRelease(_eventTap);
@@ -732,6 +848,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
     if (keyCode == 4) { // H
         [self switchToMode:MODE_HYBRID];
+        return NULL;
+    }
+    if (keyCode == 5) { // G
+        [self switchToMode:MODE_GAMEPAD];
         return NULL;
     }
 
@@ -766,6 +886,174 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, kCFRunLoopCommonModes);
     CFRelease(runLoopSource);
     CGEventTapEnable(_eventTap, true);
+}
+
+- (void)setupGamepadDeviceIfNeeded {
+    if (_gamepadDevice) {
+        return;
+    }
+    if (self.emulationMode != MODE_GAMEPAD) {
+        return;
+    }
+
+    static const uint8_t kGamepadReportDescriptor[] = {
+        0x05, 0x01,        // Usage Page (Generic Desktop)
+        0x09, 0x05,        // Usage (Game Pad)
+        0xA1, 0x01,        // Collection (Application)
+        0x05, 0x09,        //   Usage Page (Button)
+        0x19, 0x01,        //   Usage Minimum (Button 1)
+        0x29, 0x10,        //   Usage Maximum (Button 16)
+        0x15, 0x00,        //   Logical Minimum (0)
+        0x25, 0x01,        //   Logical Maximum (1)
+        0x75, 0x01,        //   Report Size (1)
+        0x95, 0x10,        //   Report Count (16)
+        0x81, 0x02,        //   Input (Data,Var,Abs)
+        0x05, 0x01,        //   Usage Page (Generic Desktop)
+        0x09, 0x39,        //   Usage (Hat switch)
+        0x15, 0x00,        //   Logical Minimum (0)
+        0x25, 0x07,        //   Logical Maximum (7)
+        0x35, 0x00,        //   Physical Minimum (0)
+        0x46, 0x3B, 0x01,  //   Physical Maximum (315)
+        0x65, 0x14,        //   Unit (Eng Rot: Degree)
+        0x75, 0x04,        //   Report Size (4)
+        0x95, 0x01,        //   Report Count (1)
+        0x81, 0x42,        //   Input (Data,Var,Abs,Null)
+        0x75, 0x04,        //   Report Size (4)
+        0x95, 0x01,        //   Report Count (1)
+        0x81, 0x03,        //   Input (Cnst,Var,Abs)
+        0x09, 0x30,        //   Usage (X)
+        0x09, 0x31,        //   Usage (Y)
+        0x09, 0x33,        //   Usage (Rx)
+        0x09, 0x34,        //   Usage (Ry)
+        0x15, 0x81,        //   Logical Minimum (-127)
+        0x25, 0x7F,        //   Logical Maximum (127)
+        0x75, 0x08,        //   Report Size (8)
+        0x95, 0x04,        //   Report Count (4)
+        0x81, 0x02,        //   Input (Data,Var,Abs)
+        0xC0               // End Collection
+    };
+
+    NSData* descriptor = [NSData dataWithBytes:kGamepadReportDescriptor length:sizeof(kGamepadReportDescriptor)];
+    NSDictionary* properties = @{
+        @kIOHIDReportDescriptorKey: descriptor,
+        @kIOHIDVendorIDKey: @(0xF0D0),
+        @kIOHIDProductIDKey: @(0x0001),
+        @kIOHIDVersionNumberKey: @(0x0001),
+        @kIOHIDManufacturerKey: @"JoyCon2forMac",
+        @kIOHIDProductKey: @"JoyCon2forMac Gamepad",
+        @kIOHIDPrimaryUsagePageKey: @(0x01),
+        @kIOHIDPrimaryUsageKey: @(0x05),
+    };
+
+    _gamepadDevice = IOHIDUserDeviceCreate(kCFAllocatorDefault, (CFDictionaryRef)properties);
+    if (!_gamepadDevice) {
+        NSLog(@"Failed to create virtual gamepad device");
+        return;
+    }
+
+    _gamepadButtons = 0;
+    _gamepadDpadUp = false;
+    _gamepadDpadDown = false;
+    _gamepadDpadLeft = false;
+    _gamepadDpadRight = false;
+    _gamepadLX = 0;
+    _gamepadLY = 0;
+    _gamepadRX = 0;
+    _gamepadRY = 0;
+    [self sendGamepadReport];
+}
+
+- (void)destroyGamepadDevice {
+    if (_gamepadDevice) {
+        CFRelease(_gamepadDevice);
+        _gamepadDevice = NULL;
+    }
+}
+
+- (void)sendGamepadReport {
+    if (!_gamepadDevice) {
+        return;
+    }
+
+    uint8_t hat = 8;
+    if (_gamepadDpadUp && _gamepadDpadRight) hat = 1;
+    else if (_gamepadDpadRight && _gamepadDpadDown) hat = 3;
+    else if (_gamepadDpadDown && _gamepadDpadLeft) hat = 5;
+    else if (_gamepadDpadLeft && _gamepadDpadUp) hat = 7;
+    else if (_gamepadDpadUp) hat = 0;
+    else if (_gamepadDpadRight) hat = 2;
+    else if (_gamepadDpadDown) hat = 4;
+    else if (_gamepadDpadLeft) hat = 6;
+
+    uint8_t report[7];
+    report[0] = (uint8_t)(_gamepadButtons & 0xFF);
+    report[1] = (uint8_t)((_gamepadButtons >> 8) & 0xFF);
+    report[2] = (uint8_t)(hat & 0x0F);
+    report[3] = (uint8_t)_gamepadLX;
+    report[4] = (uint8_t)_gamepadLY;
+    report[5] = (uint8_t)_gamepadRX;
+    report[6] = (uint8_t)_gamepadRY;
+
+    IOReturn result = IOHIDUserDeviceHandleReport(_gamepadDevice, report, sizeof(report));
+    if (result != kIOReturnSuccess) {
+        // Avoid spamming logs; failures here typically mean the OS rejected the virtual device.
+    }
+}
+
+- (void)setGamepadButtonMask:(uint16_t)mask down:(BOOL)down {
+    if (down) {
+        _gamepadButtons |= mask;
+    } else {
+        _gamepadButtons &= (uint16_t)~mask;
+    }
+    [self sendGamepadReport];
+}
+
+- (void)setGamepadDpadDirection:(uint8_t)direction down:(BOOL)down {
+    switch (direction) {
+        case 0: _gamepadDpadUp = down; break;
+        case 1: _gamepadDpadDown = down; break;
+        case 2: _gamepadDpadLeft = down; break;
+        case 3: _gamepadDpadRight = down; break;
+        default: break;
+    }
+    [self sendGamepadReport];
+}
+
+- (void)updateGamepadAxesFromJoyconData:(NSDictionary*)joyconData deviceType:(const std::string&)deviceType {
+    if (!_gamepadDevice) {
+        return;
+    }
+
+    auto normalizeAxis = [](NSNumber* value, bool invert) -> int8_t {
+        if (![value isKindOfClass:[NSNumber class]]) {
+            return 0;
+        }
+        double normalized = ([value doubleValue] - 2047.0) / 2047.0;
+        normalized = ClampDouble(normalized, -1.0, 1.0);
+        if (invert) {
+            normalized = -normalized;
+        }
+        int scaled = (int)llround(normalized * 127.0);
+        if (scaled < -127) scaled = -127;
+        if (scaled > 127) scaled = 127;
+        return (int8_t)scaled;
+    };
+
+    if (deviceType == "L" || deviceType == "Unknown") {
+        NSNumber* lx = joyconData[@"LeftStickX"];
+        NSNumber* ly = joyconData[@"LeftStickY"];
+        _gamepadLX = normalizeAxis(lx, false);
+        _gamepadLY = normalizeAxis(ly, true);
+    }
+    if (deviceType == "R" || deviceType == "Unknown") {
+        NSNumber* rx = joyconData[@"RightStickX"];
+        NSNumber* ry = joyconData[@"RightStickY"];
+        _gamepadRX = normalizeAxis(rx, false);
+        _gamepadRY = normalizeAxis(ry, true);
+    }
+
+    [self sendGamepadReport];
 }
 
 - (void)moveCursorByDeltaX:(double)deltaX deltaY:(double)deltaY {
@@ -1136,6 +1424,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         case MODE_KEYBOARD:
             selectedBindings = &_config.keyboardBindings;
             break;
+        case MODE_GAMEPAD:
+            selectedBindings = &_config.gamepadBindings;
+            break;
         case MODE_HYBRID:
         default:
             selectedBindings = &_config.hybridBindings;
@@ -1163,6 +1454,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
     [self releaseAllPressedInputs];
     self.emulationMode = mode;
+    if (mode == MODE_GAMEPAD) {
+        [self setupGamepadDeviceIfNeeded];
+    } else {
+        [self destroyGamepadDevice];
+    }
     NSLog(@"Switched to %@ mode", ModeName(mode));
 }
 
@@ -1174,6 +1470,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     for (const auto& entry : _config.mouseBindings) relevantMasks.insert(entry.first);
     for (const auto& entry : _config.keyboardBindings) relevantMasks.insert(entry.first);
     for (const auto& entry : _config.hybridBindings) relevantMasks.insert(entry.first);
+    for (const auto& entry : _config.gamepadBindings) relevantMasks.insert(entry.first);
 
     for (auto& entry : _deviceStates) {
         DeviceState& state = entry.second;
@@ -1219,6 +1516,19 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _hasCursorPosition = NO;
     _lastDoubleWAt = 0.0;
     _lastSpaceTapAt = 0.0;
+
+    if (_gamepadDevice) {
+        _gamepadButtons = 0;
+        _gamepadDpadUp = false;
+        _gamepadDpadDown = false;
+        _gamepadDpadLeft = false;
+        _gamepadDpadRight = false;
+        _gamepadLX = 0;
+        _gamepadLY = 0;
+        _gamepadRX = 0;
+        _gamepadRY = 0;
+        [self sendGamepadReport];
+    }
 }
 
 - (void)sendHIDReportFromJoyconData:(NSDictionary *)joyconData {
@@ -1241,6 +1551,15 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     DeviceState& state = _deviceStates[identifierKey];
     if (isNewDevice && (deviceType == "R" || deviceType == "Unknown")) {
         _hasCursorPosition = NO;
+    }
+
+    if (self.emulationMode == MODE_GAMEPAD) {
+        mouseMotionEnabled = NO;
+        leftStickEnabled = NO;
+        mouseEnabled = NO;
+        keyboardEnabled = NO;
+        [self setupGamepadDeviceIfNeeded];
+        [self updateGamepadAxesFromJoyconData:joyconData deviceType:deviceType];
     }
 
     if (mouseMotionEnabled && (deviceType == "R" || deviceType == "Unknown")) {
@@ -1475,6 +1794,14 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
                 [self postScrollX:action.scrollX scrollY:action.scrollY];
             }
             break;
+        case BindingActionKindGamepadButton:
+            [self setupGamepadDeviceIfNeeded];
+            [self setGamepadButtonMask:action.gamepadButtonMask down:down];
+            break;
+        case BindingActionKindGamepadDpad:
+            [self setupGamepadDeviceIfNeeded];
+            [self setGamepadDpadDirection:action.gamepadDpadDirection down:down];
+            break;
         case BindingActionKindLaunchpad:
             if (down) {
                 [self openLaunchpad];
@@ -1533,6 +1860,16 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
                 [self postScrollX:action.scrollX scrollY:action.scrollY];
             }
             break;
+        case BindingActionKindGamepadButton:
+            [self setupGamepadDeviceIfNeeded];
+            [self setGamepadButtonMask:action.gamepadButtonMask down:YES];
+            [self setGamepadButtonMask:action.gamepadButtonMask down:NO];
+            break;
+        case BindingActionKindGamepadDpad:
+            [self setupGamepadDeviceIfNeeded];
+            [self setGamepadDpadDirection:action.gamepadDpadDirection down:YES];
+            [self setGamepadDpadDirection:action.gamepadDpadDirection down:NO];
+            break;
         case BindingActionKindLaunchpad:
             [self openLaunchpad];
             break;
@@ -1577,6 +1914,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             break;
         case MODE_KEYBOARD:
             for (const auto& entry : _config.keyboardBindings) relevantMasks.insert(entry.first);
+            break;
+        case MODE_GAMEPAD:
+            for (const auto& entry : _config.gamepadBindings) relevantMasks.insert(entry.first);
             break;
         case MODE_HYBRID:
         default:
