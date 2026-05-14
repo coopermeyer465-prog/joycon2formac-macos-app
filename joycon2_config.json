@@ -1,6 +1,6 @@
 {
   "configVersion": 4,
-  "mode": "hybrid",
+  "mode": "gamepad",
   "enableLeftJoyCon": true,
   "mouse": {
     "sensitivity": 0.35,

@@ -330,7 +330,7 @@ static NSString* BindingSummaryFromValue(id value) {
     if ([mode isKindOfClass:[NSString class]] && mode.length > 0) {
         return mode;
     }
-    return @"hybrid";
+    return @"gamepad";
 }
 
 - (void)loadConfigDocument {
@@ -571,6 +571,13 @@ static NSString* BindingSummaryFromValue(id value) {
     [appMenu addItem:gamepadItem];
     [gamepadItem release];
 
+    NSMenuItem* keyboardItem = [[NSMenuItem alloc] initWithTitle:@"Keyboard Controls..."
+                                                         action:@selector(showKeyboardConfigurationWindow:)
+                                                  keyEquivalent:@""];
+    [keyboardItem setTarget:self];
+    [appMenu addItem:keyboardItem];
+    [keyboardItem release];
+
     [appMenu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem* quitItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"Quit %@", appName]
@@ -608,6 +615,13 @@ static NSString* BindingSummaryFromValue(id value) {
     [statusMenu addItem:gamepadItem];
     [gamepadItem release];
 
+    NSMenuItem* keyboardItem = [[NSMenuItem alloc] initWithTitle:@"Keyboard Controls..."
+                                                         action:@selector(showKeyboardConfigurationWindow:)
+                                                  keyEquivalent:@""];
+    [keyboardItem setTarget:self];
+    [statusMenu addItem:keyboardItem];
+    [keyboardItem release];
+
     [statusMenu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem* quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit JoyCon2forMac"
@@ -636,12 +650,19 @@ static NSString* BindingSummaryFromValue(id value) {
     [self showConfigurationWindow:sender];
 }
 
+- (void)showKeyboardConfigurationWindow:(id)sender {
+    [self setConfigModeAndRestartIfNeeded:@"keyboard"];
+    [self showConfigurationWindow:sender];
+}
+
 - (void)showConfigurationWindow:(id)sender {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [self buildWindow];
     NSString* modeKey = [[self currentModeKey] lowercaseString];
     if ([modeKey isEqualToString:@"gamepad"]) {
         self.titleLabel.stringValue = @"Joy-Con 2 mapping + gamepad for macOS";
+    } else if ([modeKey isEqualToString:@"keyboard"]) {
+        self.titleLabel.stringValue = @"Joy-Con 2 mapping + keyboard for macOS";
     } else {
         self.titleLabel.stringValue = @"Joy-Con 2 mapping + mouse + keyboard for macOS";
     }
