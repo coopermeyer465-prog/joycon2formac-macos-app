@@ -96,7 +96,7 @@
         "tap": "system:shift_delete"
       },
       "R": "mouse:scroll_down",
-      "ZR": "mouse:left",
+      "ZR": "key:left_control",
       "ZL": "mouse:right",
       "X": "key:f",
       "Y": "key:e",

@@ -803,7 +803,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     bindPress(_config.keyboardBindings, "X", @"key:f");
     bindPress(_config.keyboardBindings, "Y", @"key:e");
     bindPress(_config.keyboardBindings, "R", @"mouse:scroll_down");
-    bindPress(_config.keyboardBindings, "ZR", @"mouse:left");
+    // Keyboard mode: keep ZR as a key by default (use Hybrid for mouse clicks).
+    bindPress(_config.keyboardBindings, "ZR", @"key:left_control");
     bindPress(_config.keyboardBindings, "L", @"mouse:scroll_up");
     bindPress(_config.keyboardBindings, "ZL", @"mouse:right");
     bindPress(_config.keyboardBindings, "UP", @"system:pov");
@@ -1585,7 +1586,11 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return;
     }
 
-    BOOL mouseMotionEnabled = (self.emulationMode == MODE_MOUSE || self.emulationMode == MODE_HYBRID || self.emulationMode == MODE_GAMEPAD);
+    // Mouse motion is enabled in all modes so "Keyboard Controls" still has cursor movement.
+    BOOL mouseMotionEnabled = (self.emulationMode == MODE_MOUSE ||
+                               self.emulationMode == MODE_HYBRID ||
+                               self.emulationMode == MODE_GAMEPAD ||
+                               self.emulationMode == MODE_KEYBOARD);
     BOOL leftStickEnabled = (self.emulationMode == MODE_KEYBOARD || self.emulationMode == MODE_HYBRID);
     BOOL mouseEnabled = YES;
     BOOL keyboardEnabled = YES;
