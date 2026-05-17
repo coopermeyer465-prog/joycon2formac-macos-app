@@ -20,6 +20,14 @@ IOHIDUserDeviceRef IOHIDUserDeviceCreate(CFAllocatorRef allocator, CFDictionaryR
 IOReturn IOHIDUserDeviceHandleReport(IOHIDUserDeviceRef device, const uint8_t* report, CFIndex reportLength);
 }
 
+static void JoyConLogThrottled(NSString* message) {
+    static int counter = 0;
+    counter++;
+    if (counter <= 10 || (counter % 200) == 0) {
+        NSLog(@"%@", message);
+    }
+}
+
 typedef NS_ENUM(NSInteger, BindingActionKind) {
     BindingActionKindNone = 0,
     BindingActionKindKey,
@@ -947,7 +955,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     _gamepadDevice = IOHIDUserDeviceCreate(kCFAllocatorDefault, (CFDictionaryRef)properties);
     if (!_gamepadDevice) {
-        NSLog(@"Failed to create virtual gamepad device");
+        NSLog(@"Failed to create virtual gamepad device (likely blocked by macOS policy/entitlements). Gamepad buttons will not work, but mouse/keyboard bindings can still be used.");
         return;
     }
 
@@ -1542,7 +1550,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return;
     }
 
-    BOOL mouseMotionEnabled = (self.emulationMode == MODE_MOUSE || self.emulationMode == MODE_HYBRID);
+    BOOL mouseMotionEnabled = (self.emulationMode == MODE_MOUSE || self.emulationMode == MODE_HYBRID || self.emulationMode == MODE_GAMEPAD);
     BOOL leftStickEnabled = (self.emulationMode == MODE_KEYBOARD || self.emulationMode == MODE_HYBRID);
     BOOL mouseEnabled = YES;
     BOOL keyboardEnabled = YES;
@@ -1554,10 +1562,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     if (self.emulationMode == MODE_GAMEPAD) {
-        mouseMotionEnabled = NO;
-        leftStickEnabled = NO;
-        mouseEnabled = NO;
-        keyboardEnabled = NO;
+        // Gamepad mode is "gamepad + mouse" so the app stays usable even if virtual HID gamepads are blocked.
+        // Virtual gamepad output is best-effort; mouse/keyboard injection continues to work.
         [self setupGamepadDeviceIfNeeded];
         [self updateGamepadAxesFromJoyconData:joyconData deviceType:deviceType];
     }
@@ -1568,6 +1574,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     NSNumber* buttonsNumber = joyconData[@"Buttons"];
     uint32_t rawButtons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
+    if (rawButtons != 0) {
+        JoyConLogThrottled([NSString stringWithFormat:@"JoyCon2 input: type=%@ buttons=0x%08x mode=%@", deviceTypeString, rawButtons, ModeName(self.emulationMode)]);
+    }
     uint32_t buttons = rawButtons;
     if (self.emulationMode == MODE_MOUSE) {
         const uint32_t mousePrimaryMask = 0x00004000;
@@ -1585,7 +1594,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         buttons &= ~mousePrimaryMask;
         buttons &= ~mousePrimaryFallbackMask;
     }
-    if (self.emulationMode == MODE_HYBRID && (deviceType == "R" || deviceType == "Unknown")) {
+    if ((self.emulationMode == MODE_HYBRID || self.emulationMode == MODE_GAMEPAD) && (deviceType == "R" || deviceType == "Unknown")) {
         CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
         const uint32_t aMask = 0x00000800;
         const uint32_t rMask = 0x00004000;
@@ -1917,6 +1926,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
             break;
         case MODE_GAMEPAD:
             for (const auto& entry : _config.gamepadBindings) relevantMasks.insert(entry.first);
+            // Gamepad mode also runs the hybrid bindings so mouse scrolling/clicking keeps working.
+            for (const auto& entry : _config.hybridBindings) relevantMasks.insert(entry.first);
             break;
         case MODE_HYBRID:
         default:
@@ -1926,13 +1937,24 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     for (uint32_t mask : relevantMasks) {
         const ButtonBinding* binding = [self bindingForMask:mask mode:self.emulationMode];
-        if (!binding) {
+        const ButtonBinding* hybridBinding = (self.emulationMode == MODE_GAMEPAD) ? [self bindingForMask:mask mode:MODE_HYBRID] : nullptr;
+        const ButtonBinding* gamepadBinding = (self.emulationMode == MODE_GAMEPAD) ? [self bindingForMask:mask mode:MODE_GAMEPAD] : nullptr;
+        if (!binding && !hybridBinding && !gamepadBinding) {
             continue;
         }
         bool wasPressed = (state.lastButtons & mask) != 0;
         bool isPressed = (buttons & mask) != 0;
 
-        if (binding->pressAction.kind == BindingActionKindScreenshot) {
+        const ButtonBinding* screenshotBinding = nullptr;
+        if (hybridBinding && hybridBinding->pressAction.kind == BindingActionKindScreenshot) {
+            screenshotBinding = hybridBinding;
+        } else if (gamepadBinding && gamepadBinding->pressAction.kind == BindingActionKindScreenshot) {
+            screenshotBinding = gamepadBinding;
+        } else if (binding && binding->pressAction.kind == BindingActionKindScreenshot) {
+            screenshotBinding = binding;
+        }
+
+        if (screenshotBinding) {
             if ([self isScreenRecordingActive]) {
                 if (isPressed && !wasPressed) {
                     [self stopScreenRecording];
@@ -1968,36 +1990,66 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
         if (isPressed) {
             state.buttonPressedAt[mask] = now;
-            if (binding->pressAction.kind != BindingActionKindNone) {
-                [self performPressAction:binding->pressAction down:YES keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
-            } else if (binding->tapAction.kind != BindingActionKindNone) {
-                auto lastTapIt = state.lastTapActionAt.find(mask);
-                double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
-                double requiredDebounce = (mask == 0x00080000 && binding->tapAction.kind == BindingActionKindMacro &&
-                                           binding->tapAction.macroKind == BindingMacroKindDoubleW) ? 2.0 : tapDebounce;
-                if (elapsedSinceLastTap >= requiredDebounce) {
-                    [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
-                    state.lastTapActionAt[mask] = now;
+            auto performPressOrTapOnPress = [&](const ButtonBinding* b) {
+                if (!b) return;
+                if (b->pressAction.kind != BindingActionKindNone) {
+                    [self performPressAction:b->pressAction down:YES keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+                } else if (b->tapAction.kind != BindingActionKindNone) {
+                    auto lastTapIt = state.lastTapActionAt.find(mask);
+                    double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
+                    double requiredDebounce = (mask == 0x00080000 && b->tapAction.kind == BindingActionKindMacro &&
+                                               b->tapAction.macroKind == BindingMacroKindDoubleW) ? 2.0 : tapDebounce;
+                    if (elapsedSinceLastTap >= requiredDebounce) {
+                        [self performTapAction:b->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+                        state.lastTapActionAt[mask] = now;
+                    }
                 }
+            };
+
+            if (self.emulationMode == MODE_GAMEPAD) {
+                // Run hybrid outputs and gamepad outputs side-by-side.
+                performPressOrTapOnPress(hybridBinding);
+                performPressOrTapOnPress(gamepadBinding);
+            } else if (binding) {
+                performPressOrTapOnPress(binding);
             }
         } else {
-            if (binding->pressAction.kind != BindingActionKindNone) {
-                [self performPressAction:binding->pressAction down:NO keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+            auto performRelease = [&](const ButtonBinding* b) {
+                if (!b) return;
+                if (b->pressAction.kind != BindingActionKindNone) {
+                    [self performPressAction:b->pressAction down:NO keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+                }
+            };
+
+            if (self.emulationMode == MODE_GAMEPAD) {
+                performRelease(hybridBinding);
+                performRelease(gamepadBinding);
+            } else if (binding) {
+                performRelease(binding);
             }
 
             auto it = state.buttonPressedAt.find(mask);
             double duration = (it != state.buttonPressedAt.end()) ? (now - it->second) : 0.0;
-            bool shouldTap = (binding->tapAction.kind != BindingActionKindNone) &&
-                             (binding->pressAction.kind != BindingActionKindNone && duration <= tapThreshold);
-            if (shouldTap) {
+            auto maybeTapOnRelease = [&](const ButtonBinding* b) {
+                if (!b) return;
+                bool shouldTap = (b->tapAction.kind != BindingActionKindNone) &&
+                                 (b->pressAction.kind != BindingActionKindNone && duration <= tapThreshold);
+                if (!shouldTap) return;
                 auto lastTapIt = state.lastTapActionAt.find(mask);
                 double elapsedSinceLastTap = (lastTapIt != state.lastTapActionAt.end()) ? (now - lastTapIt->second) : 999.0;
-                double requiredDebounce = (mask == 0x00080000 && binding->tapAction.kind == BindingActionKindMacro &&
-                                           binding->tapAction.macroKind == BindingMacroKindDoubleW) ? 2.0 : tapDebounce;
+                double requiredDebounce = (mask == 0x00080000 && b->tapAction.kind == BindingActionKindMacro &&
+                                           b->tapAction.macroKind == BindingMacroKindDoubleW) ? 2.0 : tapDebounce;
                 if (elapsedSinceLastTap >= requiredDebounce) {
-                    [self performTapAction:binding->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
+                    [self performTapAction:b->tapAction keyboardEnabled:keyboardEnabled mouseEnabled:mouseEnabled];
                     state.lastTapActionAt[mask] = now;
                 }
+            };
+
+            if (self.emulationMode == MODE_GAMEPAD) {
+                maybeTapOnRelease(hybridBinding);
+                maybeTapOnRelease(gamepadBinding);
+            } else if (binding) {
+                maybeTapOnRelease(binding);
             }
             state.buttonPressedAt.erase(mask);
         }

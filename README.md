@@ -1,12 +1,12 @@
 # JoyCon2forMac
 
-Joy-Con 2 mouse + keyboard mapper for macOS.
+Joy-Con 2 support for macOS: mouse + keyboard mapping, with an optional (experimental) virtual gamepad mode.
 
-It runs in the menu bar (top-right of your screen) and can keep scanning/connected in the background even when its configuration window is closed.
+It runs in the menu bar (top-right of your screen) and keeps scanning/connected in the background even when its configuration window is closed.
 
 ## Download
 
-- Latest DMG: https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.dmg
+- Latest DMG: [JoyCon2forMac-macOS.dmg](https://github.com/coopermeyer465-prog/joycon2formac-macos-app/releases/latest/download/JoyCon2forMac-macOS.dmg)
 
 ## Install
 
@@ -36,8 +36,21 @@ After changing permissions, quit and relaunch the app.
 The app runs in the menu bar.
 
 1. Click `JoyCon2forMac` in the menu bar.
-2. Choose `Reconfigure / Remap...`
+2. Choose one of:
+   - `Reconfigure / Remap...` (Hybrid mouse + keyboard mapping)
+   - `Keyboard Controls...`
+   - `Gamepad Controls...`
 3. Click `Map Joy-Con Button`, press the controller button, then choose the action.
+
+Notes:
+- Default mode is `Gamepad Controls...`.
+- Gamepad mode is “gamepad + hybrid mouse” so scrolling/clicking can still work even if macOS blocks virtual gamepads on your machine.
+
+## Virtual Gamepad Notes
+
+The app attempts to create a system-visible virtual HID gamepad so games can see controller input.
+
+On some macOS versions, Apple may block virtual HID gamepad creation unless you have Apple-granted entitlements (Developer Program). If the virtual gamepad can’t be created, gamepad button mappings won’t register in games, but mouse/keyboard bindings still work.
 
 ## Credits
 
@@ -52,6 +65,7 @@ Only needed if you’re building from source:
 
 ```bash
 xcode-select --install
-cd /Users/marissameyer/Desktop/Joycon2forMac/Joycon2forMac-publish
+git clone https://github.com/coopermeyer465-prog/joycon2formac-macos-app.git
+cd joycon2formac-macos-app
 ./build.sh APP release
 ```
