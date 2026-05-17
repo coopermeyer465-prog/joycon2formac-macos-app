@@ -1152,7 +1152,8 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     if (!event) {
         return;
     }
-    CGEventPost(kCGSessionEventTap, event);
+    // kCGHIDEventTap is the most reliable injection target for mouse movement/clicks across apps.
+    CGEventPost(kCGHIDEventTap, event);
 }
 
 - (void)postSystemKey:(int64_t)key down:(BOOL)down {

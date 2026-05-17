@@ -60,6 +60,8 @@ The app attempts to create a system-visible virtual HID gamepad so games can see
 
 On some macOS versions, Apple may block virtual HID gamepad creation unless you have Apple-granted entitlements (Developer Program). If the virtual gamepad can’t be created, gamepad button mappings won’t register in games, but mouse/keyboard bindings still work.
 
+There is no supported API in Apple’s `GameController` framework to publish a “virtual controller” that games can connect to; `GameController` is for reading input from real controllers. A virtual controller on macOS generally requires a virtual HID device (or a driver/system extension).
+
 ## Credits
 
 This project is based on and heavily inspired by:
