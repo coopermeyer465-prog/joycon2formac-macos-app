@@ -1614,8 +1614,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     NSNumber* buttonsNumber = joyconData[@"Buttons"];
     uint32_t rawButtons = buttonsNumber ? (uint32_t)[buttonsNumber unsignedLongLongValue] : 0;
-    if (rawButtons != 0) {
-        JoyConLogThrottled([NSString stringWithFormat:@"JoyCon2 input: type=%@ buttons=0x%08x mode=%@", deviceTypeString, rawButtons, ModeName(self.emulationMode)]);
+    if (rawButtons != state.lastRawButtons) {
+        uint32_t delta = rawButtons ^ state.lastRawButtons;
+        JoyConLogThrottled([NSString stringWithFormat:@"JoyCon2 buttons changed: type=%@ buttons=0x%08x delta=0x%08x mode=%@", deviceTypeString, rawButtons, delta, ModeName(self.emulationMode)]);
     }
     uint32_t buttons = rawButtons;
     if (self.emulationMode == MODE_MOUSE) {
