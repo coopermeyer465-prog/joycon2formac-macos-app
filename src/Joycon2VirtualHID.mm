@@ -1627,11 +1627,16 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         bool primaryPressed = (buttons & mousePrimaryMask) != 0 ||
                               (buttons & mousePrimaryFallbackMask) != 0 ||
                               shoulderFallbackPressed;
-        if (primaryPressed != state.mouseModePrimaryPressed) {
-            [self postMouseButton:kCGMouseButtonLeft down:primaryPressed];
-            state.mouseModePrimaryPressed = primaryPressed;
+
+        // Some Joy-Con reports expose R as an analog trigger rather than a stable bit.
+        // Instead of posting a click directly here (which bypasses bindings), synthesize
+        // the R bit so the regular binding pipeline can produce click/drag behavior.
+        if (primaryPressed) {
+            buttons |= mousePrimaryMask;
+        } else {
+            buttons &= ~mousePrimaryMask;
         }
-        buttons &= ~mousePrimaryMask;
+        // Ignore the SR(R) fallback bit for bindings; we only use it to infer primaryPressed.
         buttons &= ~mousePrimaryFallbackMask;
     }
     if ((self.emulationMode == MODE_HYBRID || self.emulationMode == MODE_GAMEPAD) && (deviceType == "R" || deviceType == "Unknown")) {
