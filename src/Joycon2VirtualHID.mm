@@ -483,6 +483,7 @@ static void LoadBindingsFromDictionary(NSDictionary* dictionary,
     BOOL _middleMouseHeld;
     NSWindow *_capturePreviewWindow;
     NSTimer *_capturePreviewTimer;
+    CGEventSourceRef _eventSource;
     BOOL _hasCursorPosition;
     CGPoint _cursorPosition;
     CFAbsoluteTime _lastDoubleWAt;
@@ -561,6 +562,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     _configPath = [configPath copy];
     self.emulationMode = mode;
     self.initialized = NO;
+    _eventSource = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+    if (!_eventSource) {
+        _eventSource = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+    }
 
 #ifndef HID_ENABLE
     joyconClient = [Joycon2BLEReceiver sharedInstance];
@@ -605,6 +610,10 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         _capturePreviewWindow = nil;
     }
     [_screenRecordingPath release];
+    if (_eventSource) {
+        CFRelease(_eventSource);
+        _eventSource = NULL;
+    }
     [self stopEmulation];
     [_configPath release];
     [super dealloc];
@@ -1122,7 +1131,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     if (!cursorVisible) {
-        CGEventRef relativeEvent = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, currentPos, kCGMouseButtonLeft);
+        CGEventRef relativeEvent = CGEventCreateMouseEvent(_eventSource, kCGEventMouseMoved, currentPos, kCGMouseButtonLeft);
         if (relativeEvent) {
             CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
             CGEventSetIntegerValueField(relativeEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
@@ -1131,7 +1140,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         }
     }
 
-    CGEventRef absoluteEvent = CGEventCreateMouseEvent(NULL, eventType, nextPos, eventButton);
+    CGEventRef absoluteEvent = CGEventCreateMouseEvent(_eventSource, eventType, nextPos, eventButton);
     if (absoluteEvent) {
         CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaX, (int64_t)llround(deltaX));
         CGEventSetIntegerValueField(absoluteEvent, kCGMouseEventDeltaY, (int64_t)llround(deltaY));
@@ -2172,7 +2181,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         eventType = down ? kCGEventOtherMouseDown : kCGEventOtherMouseUp;
     }
 
-    CGEventRef clickEvent = CGEventCreateMouseEvent(NULL, eventType, currentPos, button);
+    CGEventRef clickEvent = CGEventCreateMouseEvent(_eventSource, eventType, currentPos, button);
     if (!clickEvent) {
         return;
     }
@@ -2186,7 +2195,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         return;
     }
 
-    CGEventRef wheelEvent = CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitLine, 2, scrollY, scrollX);
+    CGEventRef wheelEvent = CGEventCreateScrollWheelEvent(_eventSource, kCGScrollEventUnitLine, 2, scrollY, scrollX);
     if (!wheelEvent) {
         return;
     }
