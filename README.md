@@ -25,6 +25,14 @@ Open `System Settings -> Privacy & Security` and allow `JoyCon2forMac`:
 
 After changing permissions, quit and relaunch the app.
 
+Important: this app is currently **ad-hoc signed**. On macOS, Privacy/Accessibility permissions are tied to the app’s code signature, so after an update you may need to re-toggle (or remove + re-add) JoyCon2forMac in these lists.
+
+If you want to inspect logs from Terminal, use `/usr/bin/log` (in `zsh`, `log` is a shell builtin):
+
+```bash
+/usr/bin/log stream --predicate 'process == "JoyCon2forMac"' --info
+```
+
 ## Pair Joy-Cons
 
 1. Turn Bluetooth on in macOS.

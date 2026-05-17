@@ -28,6 +28,29 @@ static void JoyConLogThrottled(NSString* message) {
     }
 }
 
+static void PromptForAccessibilityIfNeeded(void) {
+    static BOOL didPrompt = NO;
+    if (didPrompt) {
+        return;
+    }
+    didPrompt = YES;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSAlert* alert = [[[NSAlert alloc] init] autorelease];
+        alert.messageText = @"JoyCon2forMac needs Accessibility permission";
+        alert.informativeText = @"Button/keyboard/mouse output will not work until you allow JoyCon2forMac in System Settings → Privacy & Security → Accessibility. After enabling, quit and relaunch the app.";
+        [alert addButtonWithTitle:@"Open Accessibility Settings"];
+        [alert addButtonWithTitle:@"OK"];
+        NSModalResponse response = [alert runModal];
+        if (response == NSAlertFirstButtonReturn) {
+            NSURL* url = [NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"];
+            if (url) {
+                [[NSWorkspace sharedWorkspace] openURL:url];
+            }
+        }
+    });
+}
+
 typedef NS_ENUM(NSInteger, BindingActionKind) {
     BindingActionKindNone = 0,
     BindingActionKindKey,
@@ -870,6 +893,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     NSDictionary* options = @{(__bridge NSString*)kAXTrustedCheckOptionPrompt: @YES};
     if (!AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options)) {
         NSLog(@"Accessibility access is not granted yet. Input injection may not work until JoyCon2forMac is allowed in System Settings > Privacy & Security > Accessibility.");
+        PromptForAccessibilityIfNeeded();
     }
 }
 
@@ -887,6 +911,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
                                  (__bridge void *)self);
     if (!_eventTap) {
         NSLog(@"Failed to create event tap. Grant Accessibility access in System Settings.");
+        PromptForAccessibilityIfNeeded();
         return;
     }
 
